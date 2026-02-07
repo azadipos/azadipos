@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { usePOS } from "@/lib/pos-context";
-import { ShoppingCart, LogOut, DollarSign, Lock } from "lucide-react";
+import { ShoppingCart, LogOut, RotateCcw, DollarSign, Lock } from "lucide-react";
 import { motion } from "framer-motion";
 
 export default function POSMenuPage() {
@@ -82,21 +82,21 @@ export default function POSMenuPage() {
             </Button>
           </motion.div>
           
-          {/* Placeholder buttons for future phases */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
           >
             <Button
               variant="pos"
               size="pos-large"
-              className="w-full h-40 flex flex-col gap-3 opacity-50 cursor-not-allowed"
-              disabled
+              className="w-full h-40 flex flex-col gap-3 hover:border-red-500"
+              onClick={() => router.push(`/pos/${companyId}/refund`)}
             >
-              <DollarSign className="h-10 w-10 text-gray-500" />
-              <span className="text-gray-500">Refund</span>
-              <span className="text-xs text-gray-600">Coming Soon</span>
+              <RotateCcw className="h-10 w-10 text-red-400" />
+              <span>Refund</span>
             </Button>
           </motion.div>
           
@@ -104,16 +104,17 @@ export default function POSMenuPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 }}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
           >
             <Button
               variant="pos"
               size="pos-large"
-              className="w-full h-40 flex flex-col gap-3 opacity-50 cursor-not-allowed"
-              disabled
+              className="w-full h-40 flex flex-col gap-3 hover:border-yellow-500"
+              onClick={() => router.push(`/pos/${companyId}/register`)}
             >
-              <DollarSign className="h-10 w-10 text-gray-500" />
-              <span className="text-gray-500">Register</span>
-              <span className="text-xs text-gray-600">Coming Soon</span>
+              <DollarSign className="h-10 w-10 text-yellow-400" />
+              <span>Register</span>
             </Button>
           </motion.div>
         </div>

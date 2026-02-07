@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { AdminLayout } from "@/components/admin-layout";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/loading-spinner";
-import { Package, Users, Receipt, Tags, Truck, TrendingUp } from "lucide-react";
+import { Package, Users, Receipt, Tags, Truck, TrendingUp, Gift, ClipboardList, DollarSign, BarChart3 } from "lucide-react";
 import { motion } from "framer-motion";
 
 interface Company {
@@ -82,7 +82,7 @@ export default function CompanyDashboard() {
       href: `/admin/${companyId}/employees`,
       color: "bg-green-600/20 text-green-400",
       count: company?._count?.employees ?? 0,
-      description: "Staff management",
+      description: "Staff & activity",
     },
     {
       label: "Transactions",
@@ -91,6 +91,34 @@ export default function CompanyDashboard() {
       color: "bg-cyan-600/20 text-cyan-400",
       count: company?._count?.transactions ?? 0,
       description: "Sales history",
+    },
+    {
+      label: "Promotions",
+      icon: Gift,
+      href: `/admin/${companyId}/promotions`,
+      color: "bg-pink-600/20 text-pink-400",
+      description: "BOGO, sales, deals",
+    },
+    {
+      label: "Receiving",
+      icon: ClipboardList,
+      href: `/admin/${companyId}/receiving`,
+      color: "bg-yellow-600/20 text-yellow-400",
+      description: "Inventory intake",
+    },
+    {
+      label: "Payouts",
+      icon: DollarSign,
+      href: `/admin/${companyId}/payouts`,
+      color: "bg-red-600/20 text-red-400",
+      description: "Vendor payments",
+    },
+    {
+      label: "Sales Reports",
+      icon: BarChart3,
+      href: `/admin/${companyId}/reports`,
+      color: "bg-emerald-600/20 text-emerald-400",
+      description: "Analytics & breakdown",
     },
   ];
   

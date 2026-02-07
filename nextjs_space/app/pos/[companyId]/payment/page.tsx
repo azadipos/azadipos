@@ -7,7 +7,7 @@ import { NumericKeypad } from "@/components/numeric-keypad";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { usePOS } from "@/lib/pos-context";
 import { formatCurrency } from "@/lib/helpers";
-import { ArrowLeft, CreditCard, Banknote, CheckCircle } from "lucide-react";
+import { ArrowLeft, CreditCard, Banknote, CheckCircle, SplitSquareVertical } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface CartData {
@@ -25,11 +25,17 @@ export default function PaymentPage() {
   const { employee, shiftId } = usePOS();
   
   const [cartData, setCartData] = useState<CartData | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "card" | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "card" | "split" | null>(null);
   const [cashGiven, setCashGiven] = useState("");
   const [processing, setProcessing] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
+  
+  // Split payment state
+  const [splitStep, setSplitStep] = useState<1 | 2>(1);
+  const [splitPayment1, setSplitPayment1] = useState<{ method: "cash" | "card"; amount: number } | null>(null);
+  const [splitAmount1, setSplitAmount1] = useState("");
+  const [splitMethod1, setSplitMethod1] = useState<"cash" | "card">("cash");
   
   useEffect(() => {
     if (!employee) {
@@ -164,25 +170,36 @@ export default function PaymentPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
-            className="w-full grid grid-cols-2 gap-4 mb-6"
+            className="w-full space-y-4 mb-6"
           >
+            <div className="grid grid-cols-2 gap-4">
+              <Button
+                variant="pos"
+                size="pos-large"
+                className="flex flex-col gap-2 hover:border-green-500"
+                onClick={() => setPaymentMethod("cash")}
+              >
+                <Banknote className="h-8 w-8 text-green-400" />
+                <span>Cash</span>
+              </Button>
+              <Button
+                variant="pos"
+                size="pos-large"
+                className="flex flex-col gap-2 hover:border-blue-500"
+                onClick={() => setPaymentMethod("card")}
+              >
+                <CreditCard className="h-8 w-8 text-blue-400" />
+                <span>Card</span>
+              </Button>
+            </div>
             <Button
               variant="pos"
               size="pos-large"
-              className="flex flex-col gap-2 hover:border-green-500"
-              onClick={() => setPaymentMethod("cash")}
+              className="w-full flex flex-col gap-2 hover:border-purple-500"
+              onClick={() => setPaymentMethod("split")}
             >
-              <Banknote className="h-8 w-8 text-green-400" />
-              <span>Cash</span>
-            </Button>
-            <Button
-              variant="pos"
-              size="pos-large"
-              className="flex flex-col gap-2 hover:border-blue-500"
-              onClick={() => setPaymentMethod("card")}
-            >
-              <CreditCard className="h-8 w-8 text-blue-400" />
-              <span>Card</span>
+              <SplitSquareVertical className="h-8 w-8 text-purple-400" />
+              <span>Split Payment</span>
             </Button>
           </motion.div>
         )}
@@ -270,8 +287,11 @@ export default function PaymentPage() {
             >
               <div className="p-8 bg-pos-card border border-pos-border rounded-lg mb-6">
                 <CreditCard className="h-16 w-16 text-blue-400 mx-auto mb-4" />
-                <p className="text-xl text-gray-300">Process card payment</p>
+                <p className="text-xl text-gray-300">Follow instructions on Pin Pad</p>
                 <p className="text-gray-500 mt-2">Amount: {formatCurrency(total)}</p>
+                <p className="text-xs text-gray-600 mt-4">
+                  (In production, this will communicate with the Ingenico terminal)
+                </p>
               </div>
               
               <div className="flex gap-4">
@@ -288,9 +308,242 @@ export default function PaymentPage() {
                   disabled={processing}
                   onClick={completeTransaction}
                 >
-                  {processing ? <LoadingSpinner size="sm" /> : "DONE"}
+                  {processing ? <LoadingSpinner size="sm" /> : "Payment Received"}
                 </Button>
               </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        
+        {/* Split payment flow */}
+        <AnimatePresence>
+          {paymentMethod === "split" && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="w-full"
+            >
+              <div className="mb-4 p-4 bg-pos-card border border-pos-border rounded-lg">
+                <div className="flex justify-between text-sm text-gray-400 mb-2">
+                  <span>Total</span>
+                  <span>{formatCurrency(total)}</span>
+                </div>
+                {splitPayment1 && (
+                  <div className="flex justify-between text-sm text-green-400">
+                    <span>Payment 1 ({splitPayment1.method})</span>
+                    <span>-{formatCurrency(splitPayment1.amount)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between font-bold mt-2 pt-2 border-t border-pos-border">
+                  <span>Remaining</span>
+                  <span className="text-yellow-400">
+                    {formatCurrency(total - (splitPayment1?.amount || 0))}
+                  </span>
+                </div>
+              </div>
+              
+              {splitStep === 1 && !splitPayment1 && (
+                <div className="space-y-4">
+                  <p className="text-center text-gray-400">Payment 1</p>
+                  
+                  <div className="grid grid-cols-2 gap-2 mb-4">
+                    <button
+                      onClick={() => setSplitMethod1("cash")}
+                      className={`p-3 rounded-lg border flex items-center justify-center gap-2 ${splitMethod1 === "cash" ? "border-green-500 bg-green-500/20" : "border-gray-700"}`}
+                    >
+                      <Banknote className="h-5 w-5" />
+                      Cash
+                    </button>
+                    <button
+                      onClick={() => setSplitMethod1("card")}
+                      className={`p-3 rounded-lg border flex items-center justify-center gap-2 ${splitMethod1 === "card" ? "border-blue-500 bg-blue-500/20" : "border-gray-700"}`}
+                    >
+                      <CreditCard className="h-5 w-5" />
+                      Card
+                    </button>
+                  </div>
+                  
+                  <div className="p-4 bg-pos-card border border-pos-border rounded-lg">
+                    <p className="text-gray-400 text-sm mb-1">Amount</p>
+                    <p className="text-3xl font-mono">{formatCurrency(parseFloat(splitAmount1) || 0)}</p>
+                  </div>
+                  
+                  <NumericKeypad
+                    onKeyPress={(key) => {
+                      if (key === "." && splitAmount1.includes(".")) return;
+                      setSplitAmount1(splitAmount1 + key);
+                    }}
+                    onClear={() => setSplitAmount1("")}
+                    onBackspace={() => setSplitAmount1(splitAmount1.slice(0, -1))}
+                    showDecimal
+                  />
+                  
+                  <div className="flex gap-4">
+                    <Button
+                      variant="outline"
+                      className="flex-1 h-14 border-gray-600 text-gray-300"
+                      onClick={() => {
+                        setPaymentMethod(null);
+                        setSplitStep(1);
+                        setSplitPayment1(null);
+                        setSplitAmount1("");
+                      }}
+                    >
+                      Back
+                    </Button>
+                    <Button
+                      variant="pos"
+                      className="flex-1 h-14"
+                      disabled={!splitAmount1 || parseFloat(splitAmount1) <= 0 || parseFloat(splitAmount1) >= total}
+                      onClick={() => {
+                        setSplitPayment1({
+                          method: splitMethod1,
+                          amount: parseFloat(splitAmount1),
+                        });
+                        setSplitStep(2);
+                      }}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
+              
+              {splitStep === 2 && splitPayment1 && (
+                <div className="space-y-4">
+                  <p className="text-center text-gray-400">
+                    Payment 2 - Remaining: {formatCurrency(total - splitPayment1.amount)}
+                  </p>
+                  
+                  <div className="grid grid-cols-2 gap-2 mb-4">
+                    <button
+                      onClick={() => {
+                        // Process cash for remaining
+                        setCashGiven((total - splitPayment1.amount).toString());
+                      }}
+                      className="p-4 rounded-lg border border-gray-700 hover:border-green-500 flex flex-col items-center gap-2"
+                    >
+                      <Banknote className="h-8 w-8 text-green-400" />
+                      Cash
+                    </button>
+                    <button
+                      onClick={async () => {
+                        // Process card for remaining - complete transaction
+                        setProcessing(true);
+                        try {
+                          const transactionData = {
+                            employeeId: employee?.id,
+                            shiftId: shiftId,
+                            paymentMethod: "split",
+                            cashGiven: splitPayment1.method === "cash" ? splitPayment1.amount : null,
+                            items: (cartData?.items ?? []).map((item) => ({
+                              itemId: item?.itemId,
+                              itemName: item?.name,
+                              quantity: item?.quantity,
+                              unitPrice: item?.price,
+                              isWeightItem: item?.isWeightPriced,
+                            })),
+                          };
+                          
+                          const res = await fetch(`/api/companies/${companyId}/transactions`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(transactionData),
+                          });
+                          
+                          if (!res.ok) throw new Error("Failed");
+                          
+                          sessionStorage.removeItem("pos_cart");
+                          setSuccess(true);
+                          setTimeout(() => router.push(`/pos/${companyId}/transaction`), 2000);
+                        } catch (err) {
+                          setError("Failed to complete transaction");
+                        } finally {
+                          setProcessing(false);
+                        }
+                      }}
+                      className="p-4 rounded-lg border border-gray-700 hover:border-blue-500 flex flex-col items-center gap-2"
+                    >
+                      <CreditCard className="h-8 w-8 text-blue-400" />
+                      Card
+                    </button>
+                  </div>
+                  
+                  {parseFloat(cashGiven) > 0 && (
+                    <div className="space-y-4">
+                      <div className="p-4 bg-pos-card border border-pos-border rounded-lg">
+                        <p className="text-gray-400 text-sm mb-1">Cash for Payment 2</p>
+                        <p className="text-3xl font-mono">{formatCurrency(parseFloat(cashGiven))}</p>
+                      </div>
+                      
+                      {parseFloat(cashGiven) >= (total - splitPayment1.amount) && (
+                        <div className="p-4 bg-green-600/20 border border-green-600/30 rounded-lg">
+                          <p className="text-sm text-green-400">Change Due</p>
+                          <p className="text-2xl font-bold text-green-400">
+                            {formatCurrency(parseFloat(cashGiven) - (total - splitPayment1.amount))}
+                          </p>
+                        </div>
+                      )}
+                      
+                      <Button
+                        variant="pos-success"
+                        className="w-full h-14"
+                        disabled={processing || parseFloat(cashGiven) < (total - splitPayment1.amount)}
+                        onClick={async () => {
+                          setProcessing(true);
+                          try {
+                            const transactionData = {
+                              employeeId: employee?.id,
+                              shiftId: shiftId,
+                              paymentMethod: "split",
+                              cashGiven: (splitPayment1.method === "cash" ? splitPayment1.amount : 0) + parseFloat(cashGiven),
+                              items: (cartData?.items ?? []).map((item) => ({
+                                itemId: item?.itemId,
+                                itemName: item?.name,
+                                quantity: item?.quantity,
+                                unitPrice: item?.price,
+                                isWeightItem: item?.isWeightPriced,
+                              })),
+                            };
+                            
+                            const res = await fetch(`/api/companies/${companyId}/transactions`, {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify(transactionData),
+                            });
+                            
+                            if (!res.ok) throw new Error("Failed");
+                            
+                            sessionStorage.removeItem("pos_cart");
+                            setSuccess(true);
+                            setTimeout(() => router.push(`/pos/${companyId}/transaction`), 2000);
+                          } catch (err) {
+                            setError("Failed to complete transaction");
+                          } finally {
+                            setProcessing(false);
+                          }
+                        }}
+                      >
+                        {processing ? <LoadingSpinner size="sm" /> : "Complete Transaction"}
+                      </Button>
+                    </div>
+                  )}
+                  
+                  <Button
+                    variant="ghost"
+                    className="w-full"
+                    onClick={() => {
+                      setSplitStep(1);
+                      setSplitPayment1(null);
+                      setSplitAmount1("");
+                      setCashGiven("");
+                    }}
+                  >
+                    Start Over
+                  </Button>
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>

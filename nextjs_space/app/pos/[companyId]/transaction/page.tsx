@@ -37,11 +37,17 @@ export default function TransactionPage() {
   const companyId = params?.companyId as string;
   const { employee, shiftId } = usePOS();
   const barcodeInputRef = useRef<HTMLInputElement>(null);
+  const lastKeyTimeRef = useRef<number>(0);
+  const barcodeBufferRef = useRef<string>("");
   
   const [cart, setCart] = useState<CartItem[]>([]);
   const [barcode, setBarcode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  
+  // Auto-scan detection: scanners type very fast (< 50ms between keys)
+  const SCANNER_THRESHOLD_MS = 50;
+  const MIN_BARCODE_LENGTH = 4;
   
   // Weight entry modal
   const [weightModalOpen, setWeightModalOpen] = useState(false);
@@ -216,6 +222,36 @@ export default function TransactionPage() {
     }
   };
   
+  // Handle barcode input change with auto-scan detection
+  const handleBarcodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newValue = e.target.value;
+    const now = Date.now();
+    const timeSinceLastKey = now - lastKeyTimeRef.current;
+    
+    // If typing is very fast (scanner), accumulate in buffer
+    if (timeSinceLastKey < SCANNER_THRESHOLD_MS && newValue.length > barcode.length) {
+      barcodeBufferRef.current = newValue;
+    } else if (timeSinceLastKey >= SCANNER_THRESHOLD_MS) {
+      // Reset buffer on slow typing (human)
+      barcodeBufferRef.current = "";
+    }
+    
+    lastKeyTimeRef.current = now;
+    setBarcode(newValue);
+    
+    // Auto-submit after scanner completes (detected by pause after fast input)
+    setTimeout(() => {
+      const currentTime = Date.now();
+      if (currentTime - lastKeyTimeRef.current >= 100 && 
+          barcodeBufferRef.current.length >= MIN_BARCODE_LENGTH &&
+          barcodeBufferRef.current === newValue) {
+        // Scanner finished - auto submit
+        lookupItem(newValue);
+        barcodeBufferRef.current = "";
+      }
+    }, 100);
+  };
+  
   if (!employee) return null;
   
   return (
@@ -248,9 +284,9 @@ export default function TransactionPage() {
             <Input
               ref={barcodeInputRef}
               value={barcode}
-              onChange={(e) => setBarcode(e.target.value)}
+              onChange={handleBarcodeChange}
               onKeyDown={handleBarcodeKeyDown}
-              placeholder="Scan barcode or type and press Enter"
+              placeholder="Scan barcode (auto-detects) or type and press Enter"
               className="pl-10 h-14 text-lg bg-pos-card border-pos-border text-white"
               autoFocus
             />

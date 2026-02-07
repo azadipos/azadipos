@@ -118,11 +118,11 @@ export default function POSLoginPage() {
         <div className="mb-6">
           <div className="flex items-center justify-center gap-2 p-4 bg-pos-card border border-pos-border rounded-lg">
             <Lock className="h-5 w-5 text-gray-500" />
-            <div className="flex gap-2">
-              {[0, 1, 2, 3, 4, 5].map((i) => (
+            <div className="flex gap-3">
+              {[0, 1, 2, 3].map((i) => (
                 <div
                   key={i}
-                  className={`w-4 h-4 rounded-full transition-colors ${
+                  className={`w-5 h-5 rounded-full transition-colors ${
                     i < pin.length ? "bg-green-500" : "bg-gray-700"
                   }`}
                 />

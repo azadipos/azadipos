@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { AdminLayout } from "@/components/admin-layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,7 @@ interface Employee {
 
 export default function EmployeesPage() {
   const params = useParams();
+  const router = useRouter();
   const companyId = params?.companyId as string;
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
@@ -159,7 +160,8 @@ export default function EmployeesPage() {
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: index * 0.05 }}
-                      className="p-4 bg-gray-800/50 border border-gray-700 rounded-lg"
+                      className="p-4 bg-gray-800/50 border border-gray-700 rounded-lg hover:border-gray-600 cursor-pointer transition-colors"
+                      onClick={() => router.push(`/admin/${companyId}/employees/${employee?.id}`)}
                     >
                       <div className="flex items-start justify-between">
                         <div>
@@ -173,8 +175,9 @@ export default function EmployeesPage() {
                             )}
                           </div>
                           <p className="text-sm text-gray-500 mt-1 font-mono">PIN: {employee?.pin}</p>
+                          <p className="text-xs text-gray-600 mt-2">Click to view stats \u2192</p>
                         </div>
-                        <div className="flex gap-1">
+                        <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
                           <Button variant="ghost" size="icon" onClick={() => openModal(employee)} className="text-gray-400 hover:text-white">
                             <Edit2 className="h-4 w-4" />
                           </Button>
