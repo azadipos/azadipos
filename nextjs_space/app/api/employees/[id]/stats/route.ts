@@ -1,72 +1,65 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 
 export async function GET(
-  request: NextRequest,
+  request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
     const employeeId = params.id;
     
-    // Get all transactions by this employee
-    const transactions = await prisma.transaction.findMany({
-      where: { employeeId },
-    });
-    
-    // Calculate stats
-    let totalSales = 0;
-    let totalRefunds = 0;
-    let totalVoids = 0;
-    let totalStoreCredits = 0;
-    let transactionCount = 0;
-    let refundCount = 0;
-    let voidCount = 0;
-    let storeCreditCount = 0;
-    
-    transactions.forEach((txn: { type: string; total: number }) => {
-      switch (txn.type) {
-        case "sale":
-          totalSales += txn.total;
-          transactionCount++;
-          break;
-        case "refund":
-          totalRefunds += txn.total;
-          refundCount++;
-          break;
-        case "void":
-          totalVoids += txn.total;
-          voidCount++;
-          break;
-        case "store_credit":
-          totalStoreCredits += txn.total;
-          storeCreditCount++;
-          break;
-      }
-    });
-    
-    // Also count store credits authorized by this employee (if manager)
-    const authorizedCredits = await prisma.transaction.findMany({
+    // Get sales transactions
+    const salesAgg = await prisma.transaction.aggregate({
       where: {
-        authorizedByEmployeeId: employeeId,
-        type: "store_credit",
+        employeeId,
+        type: "sale",
       },
+      _sum: {
+        total: true,
+      },
+      _count: true,
     });
     
-    const authorizedCreditCount = authorizedCredits.length;
-    const authorizedCreditTotal = authorizedCredits.reduce((sum: number, txn: { total: number }) => sum + txn.total, 0);
+    // Get refund transactions
+    const refundAgg = await prisma.transaction.aggregate({
+      where: {
+        employeeId,
+        type: "refund",
+      },
+      _sum: {
+        total: true,
+      },
+      _count: true,
+    });
+    
+    // Get void transactions
+    const voidAgg = await prisma.transaction.aggregate({
+      where: {
+        employeeId,
+        type: "void",
+      },
+      _sum: {
+        total: true,
+      },
+      _count: true,
+    });
+    
+    // Count store credits - since we don't have employeeId on StoreCredit,
+    // we'll count from refund transactions that generated store credits
+    // For now, return 0 until schema is updated to track issuer
     
     return NextResponse.json({
-      totalSales,
-      totalRefunds,
-      totalVoids,
-      totalStoreCredits: totalStoreCredits + authorizedCreditTotal,
-      transactionCount,
-      refundCount,
-      voidCount,
-      storeCreditCount: storeCreditCount + authorizedCreditCount,
+      totalSales: salesAgg._sum.total ?? 0,
+      totalRefunds: refundAgg._sum.total ?? 0,
+      totalVoids: voidAgg._sum.total ?? 0,
+      totalStoreCredits: 0, // Need schema update to track issuer
+      transactionCount: salesAgg._count ?? 0,
+      refundCount: refundAgg._count ?? 0,
+      voidCount: voidAgg._count ?? 0,
+      storeCreditCount: 0, // Need schema update to track issuer
     });
   } catch (error) {
-    console.error("Fetch stats error:", error);
+    console.error("Employee stats error:", error);
     return NextResponse.json({ error: "Failed to fetch stats" }, { status: 500 });
   }
 }

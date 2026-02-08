@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/modal";
 import { LoadingSpinner } from "@/components/loading-spinner";
-import { Receipt, Calendar, ChevronDown, ChevronUp, Filter } from "lucide-react";
+import { Receipt, Calendar, ChevronDown, ChevronUp, Filter, RotateCcw, DollarSign, XCircle } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/helpers";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -35,6 +35,13 @@ interface Transaction {
   items: TransactionItem[];
 }
 
+const TRANSACTION_TYPES = [
+  { value: "all", label: "All Types", color: "bg-gray-600/20 text-gray-400" },
+  { value: "sale", label: "Sales", color: "bg-green-600/20 text-green-400" },
+  { value: "refund", label: "Refunds", color: "bg-red-600/20 text-red-400" },
+  { value: "void", label: "Voids", color: "bg-orange-600/20 text-orange-400" },
+];
+
 export default function TransactionsPage() {
   const params = useParams();
   const companyId = params?.companyId as string;
@@ -42,6 +49,7 @@ export default function TransactionsPage() {
   const [loading, setLoading] = useState(true);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [typeFilter, setTypeFilter] = useState("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   
@@ -52,11 +60,12 @@ export default function TransactionsPage() {
   const fetchTransactions = async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (startDate) params.append("startDate", startDate);
-      if (endDate) params.append("endDate", endDate);
+      const queryParams = new URLSearchParams();
+      if (startDate) queryParams.append("startDate", startDate);
+      if (endDate) queryParams.append("endDate", endDate);
+      if (typeFilter && typeFilter !== "all") queryParams.append("type", typeFilter);
       
-      const url = `/api/companies/${companyId}/transactions${params.toString() ? `?${params}` : ""}`;
+      const url = `/api/companies/${companyId}/transactions${queryParams.toString() ? `?${queryParams}` : ""}`;
       const res = await fetch(url);
       const data = await res.json();
       setTransactions(data ?? []);
@@ -74,12 +83,39 @@ export default function TransactionsPage() {
   const clearFilter = () => {
     setStartDate("");
     setEndDate("");
+    setTypeFilter("all");
     setTimeout(fetchTransactions, 0);
   };
   
+  // Filter transactions by type for display (in case API doesn't filter)
+  const filteredTransactions = typeFilter === "all" 
+    ? transactions 
+    : transactions.filter((t) => t?.type === typeFilter);
+  
   const totals = {
     sales: (transactions ?? []).filter((t) => t?.type === "sale").reduce((sum, t) => sum + (t?.total ?? 0), 0),
-    count: (transactions ?? []).filter((t) => t?.type === "sale").length,
+    salesCount: (transactions ?? []).filter((t) => t?.type === "sale").length,
+    refunds: (transactions ?? []).filter((t) => t?.type === "refund").reduce((sum, t) => sum + Math.abs(t?.total ?? 0), 0),
+    refundsCount: (transactions ?? []).filter((t) => t?.type === "refund").length,
+    voids: (transactions ?? []).filter((t) => t?.type === "void").length,
+  };
+  
+  const getTypeColor = (type: string) => {
+    switch (type) {
+      case "sale": return "text-green-400";
+      case "refund": return "text-red-400";
+      case "void": return "text-orange-400";
+      default: return "text-gray-400";
+    }
+  };
+  
+  const getTypeIcon = (type: string) => {
+    switch (type) {
+      case "sale": return <DollarSign className="h-4 w-4" />;
+      case "refund": return <RotateCcw className="h-4 w-4" />;
+      case "void": return <XCircle className="h-4 w-4" />;
+      default: return <Receipt className="h-4 w-4" />;
+    }
   };
   
   return (
@@ -109,25 +145,44 @@ export default function TransactionsPage() {
               className="bg-gray-800 border-gray-600 text-white w-40"
             />
           </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Type</label>
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              className="h-10 px-3 bg-gray-800 border border-gray-600 text-white rounded-lg w-36"
+            >
+              {TRANSACTION_TYPES.map((type) => (
+                <option key={type.value} value={type.value}>{type.label}</option>
+              ))}
+            </select>
+          </div>
           <Button onClick={applyFilter} className="bg-blue-600 hover:bg-blue-700">
             <Filter className="h-4 w-4 mr-2" />
             Apply
           </Button>
-          {(startDate || endDate) && (
+          {(startDate || endDate || typeFilter !== "all") && (
             <Button variant="outline" onClick={clearFilter} className="border-gray-600 text-gray-300">
               Clear
             </Button>
           )}
         </div>
         
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-3">
           <div className="p-4 bg-green-600/20 border border-green-600/30 rounded-lg">
             <p className="text-sm text-green-400">Total Sales</p>
             <p className="text-2xl font-bold text-white mt-1">{formatCurrency(totals.sales)}</p>
+            <p className="text-xs text-gray-500 mt-1">{totals.salesCount} transactions</p>
           </div>
-          <div className="p-4 bg-blue-600/20 border border-blue-600/30 rounded-lg">
-            <p className="text-sm text-blue-400">Transactions</p>
-            <p className="text-2xl font-bold text-white mt-1">{totals.count}</p>
+          <div className="p-4 bg-red-600/20 border border-red-600/30 rounded-lg">
+            <p className="text-sm text-red-400">Total Refunds</p>
+            <p className="text-2xl font-bold text-white mt-1">{formatCurrency(totals.refunds)}</p>
+            <p className="text-xs text-gray-500 mt-1">{totals.refundsCount} refunds</p>
+          </div>
+          <div className="p-4 bg-orange-600/20 border border-orange-600/30 rounded-lg">
+            <p className="text-sm text-orange-400">Voids</p>
+            <p className="text-2xl font-bold text-white mt-1">{totals.voids}</p>
+            <p className="text-xs text-gray-500 mt-1">voided transactions</p>
           </div>
         </div>
         
@@ -135,15 +190,19 @@ export default function TransactionsPage() {
           <div className="flex justify-center py-20">
             <LoadingSpinner size="lg" />
           </div>
-        ) : (transactions?.length ?? 0) === 0 ? (
+        ) : (filteredTransactions?.length ?? 0) === 0 ? (
           <div className="text-center py-20">
             <Receipt className="h-16 w-16 text-gray-600 mx-auto mb-4" />
             <h2 className="text-xl font-semibold text-gray-400">No transactions found</h2>
-            <p className="text-gray-500 mt-2">Transactions will appear here after sales</p>
+            <p className="text-gray-500 mt-2">
+              {typeFilter !== "all" 
+                ? `No ${typeFilter} transactions match your criteria` 
+                : "Transactions will appear here after sales"}
+            </p>
           </div>
         ) : (
           <div className="space-y-2">
-            {transactions?.map((txn, index) => (
+            {filteredTransactions?.map((txn, index) => (
               <motion.div
                 key={txn?.id}
                 initial={{ opacity: 0 }}
@@ -156,17 +215,34 @@ export default function TransactionsPage() {
                   className="w-full p-4 flex items-center justify-between text-left hover:bg-gray-800/80 transition-colors"
                 >
                   <div className="flex items-center gap-4">
+                    <div className={`p-2 rounded-lg ${
+                      txn?.type === "sale" ? "bg-green-600/20" :
+                      txn?.type === "refund" ? "bg-red-600/20" :
+                      "bg-orange-600/20"
+                    }`}>
+                      <span className={getTypeColor(txn?.type)}>{getTypeIcon(txn?.type)}</span>
+                    </div>
                     <div className="text-sm">
                       <p className="font-mono text-gray-400">{txn?.transactionNumber}</p>
                       <p className="text-gray-500 text-xs">{formatDate(txn?.createdAt)}</p>
                     </div>
                     <div>
                       <p className="font-medium">{txn?.employee?.name ?? "Unknown"}</p>
-                      <p className="text-sm text-gray-500 capitalize">{txn?.paymentMethod}</p>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs uppercase font-medium ${getTypeColor(txn?.type)}`}>
+                          {txn?.type}
+                        </span>
+                        <span className="text-sm text-gray-500 capitalize">• {txn?.paymentMethod}</span>
+                      </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
-                    <span className="text-lg font-semibold">{formatCurrency(txn?.total)}</span>
+                    <span className={`text-lg font-semibold ${
+                      txn?.type === "refund" ? "text-red-400" : 
+                      txn?.type === "void" ? "text-orange-400" : ""
+                    }`}>
+                      {txn?.type === "refund" ? "-" : ""}{formatCurrency(Math.abs(txn?.total ?? 0))}
+                    </span>
                     {expandedId === txn?.id ? (
                       <ChevronUp className="h-4 w-4 text-gray-500" />
                     ) : (

@@ -27,7 +27,14 @@ export default function POSSelectCompanyPage() {
     try {
       const res = await fetch("/api/companies");
       const data = await res.json();
-      setCompanies(data ?? []);
+      const companyList = Array.isArray(data) ? data : [];
+      setCompanies(companyList);
+      
+      // Auto-select if only one company exists
+      if (companyList.length === 1) {
+        setCompanyId(companyList[0].id);
+        router.replace(`/pos/${companyList[0].id}/login`);
+      }
     } catch (err) {
       console.error("Failed to fetch companies:", err);
     } finally {
@@ -39,6 +46,15 @@ export default function POSSelectCompanyPage() {
     setCompanyId(company.id);
     router.push(`/pos/${company.id}/login`);
   };
+  
+  // Show loading while auto-selecting single company
+  if (loading || companies.length === 1) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <LoadingSpinner size="lg" />
+      </div>
+    );
+  }
   
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4">
@@ -52,16 +68,14 @@ export default function POSSelectCompanyPage() {
         <p className="text-gray-400 mt-2">Select a company to continue</p>
       </motion.div>
       
-      {loading ? (
-        <LoadingSpinner size="lg" />
-      ) : (companies?.length ?? 0) === 0 ? (
+      {companies.length === 0 ? (
         <div className="text-center">
           <p className="text-gray-500">No companies found</p>
           <p className="text-sm text-gray-600 mt-2">Create a company in the Admin Portal first</p>
         </div>
       ) : (
         <div className="grid gap-4 w-full max-w-md">
-          {companies?.map((company, index) => (
+          {companies.map((company, index) => (
             <motion.div
               key={company?.id}
               initial={{ opacity: 0, y: 20 }}

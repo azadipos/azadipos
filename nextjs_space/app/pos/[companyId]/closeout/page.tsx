@@ -207,7 +207,7 @@ export default function CloseOutPage() {
               <div className="flex items-center justify-center gap-2 p-4 bg-pos-card border border-pos-border rounded-lg">
                 <Lock className="h-5 w-5 text-gray-500" />
                 <div className="flex gap-2">
-                  {[0, 1, 2, 3, 4, 5].map((i) => (
+                  {[0, 1, 2, 3].map((i) => (
                     <div
                       key={i}
                       className={`w-4 h-4 rounded-full transition-colors ${
@@ -224,7 +224,7 @@ export default function CloseOutPage() {
             
             <NumericKeypad
               onKeyPress={(key) => {
-                if (managerPin.length < 6) {
+                if (managerPin.length < 4) {
                   setManagerPin(managerPin + key);
                   setPinError("");
                 }

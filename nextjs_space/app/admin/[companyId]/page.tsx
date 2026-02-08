@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { AdminLayout } from "@/components/admin-layout";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/loading-spinner";
-import { Package, Users, Receipt, Tags, Truck, TrendingUp, Gift, ClipboardList, DollarSign, BarChart3 } from "lucide-react";
+import { Package, Users, Receipt, Tags, Truck, TrendingUp, Gift, ClipboardList, DollarSign, BarChart3, AlertTriangle } from "lucide-react";
 import { motion } from "framer-motion";
 
 interface Company {
@@ -98,6 +98,13 @@ export default function CompanyDashboard() {
       href: `/admin/${companyId}/promotions`,
       color: "bg-pink-600/20 text-pink-400",
       description: "BOGO, sales, deals",
+    },
+    {
+      label: "Reorder",
+      icon: AlertTriangle,
+      href: `/admin/${companyId}/reorder`,
+      color: "bg-amber-600/20 text-amber-400",
+      description: "Low stock alerts",
     },
     {
       label: "Receiving",

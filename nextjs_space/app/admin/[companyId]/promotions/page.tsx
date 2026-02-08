@@ -17,6 +17,9 @@ import {
   Calendar,
   ToggleLeft,
   ToggleRight,
+  Search,
+  X,
+  Check,
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -69,15 +72,17 @@ export default function PromotionsPage() {
   // Config state based on type
   const [bogoTriggerQty, setBogoTriggerQty] = useState(1);
   const [bogoFreeQty, setBogoFreeQty] = useState(1);
+  const [bogoPercentOff, setBogoPercentOff] = useState(100); // NEW: percentage off for "get one"
   const [bogoAppliesTo, setBogoAppliesTo] = useState("item");
   const [bogoItemId, setBogoItemId] = useState("");
   const [bogoCategoryId, setBogoCategoryId] = useState("");
   
   const [saleDiscountType, setSaleDiscountType] = useState("percent");
   const [saleDiscountValue, setSaleDiscountValue] = useState(0);
-  const [saleAppliesTo, setSaleAppliesTo] = useState("item");
-  const [saleItemId, setSaleItemId] = useState("");
+  const [saleAppliesTo, setSaleAppliesTo] = useState("items"); // items, category, all
+  const [saleSelectedItems, setSaleSelectedItems] = useState<string[]>([]); // Multi-select items
   const [saleCategoryId, setSaleCategoryId] = useState("");
+  const [saleItemSearch, setSaleItemSearch] = useState("");
   
   const [bundleQty, setBundleQty] = useState(2);
   const [bundlePrice, setBundlePrice] = useState(0);
@@ -103,9 +108,9 @@ export default function PromotionsPage() {
         itemRes.json(),
       ]);
       
-      setPromotions(promos);
-      setCategories(cats);
-      setItems(itms);
+      setPromotions(Array.isArray(promos) ? promos : []);
+      setCategories(Array.isArray(cats) ? cats : []);
+      setItems(Array.isArray(itms) ? itms : []);
     } catch (err) {
       console.error("Failed to fetch data:", err);
     } finally {
@@ -121,14 +126,16 @@ export default function PromotionsPage() {
     setIsActive(true);
     setBogoTriggerQty(1);
     setBogoFreeQty(1);
+    setBogoPercentOff(100);
     setBogoAppliesTo("item");
     setBogoItemId("");
     setBogoCategoryId("");
     setSaleDiscountType("percent");
     setSaleDiscountValue(0);
-    setSaleAppliesTo("item");
-    setSaleItemId("");
+    setSaleAppliesTo("items");
+    setSaleSelectedItems([]);
     setSaleCategoryId("");
+    setSaleItemSearch("");
     setBundleQty(2);
     setBundlePrice(0);
     setBundleAppliesTo("item");
@@ -155,14 +162,15 @@ export default function PromotionsPage() {
       if (promo.type === "bogo") {
         setBogoTriggerQty(config.triggerQty || 1);
         setBogoFreeQty(config.freeQty || 1);
+        setBogoPercentOff(config.percentOff ?? 100);
         setBogoAppliesTo(config.appliesTo || "item");
         setBogoItemId(config.itemId || "");
         setBogoCategoryId(config.categoryId || "");
       } else if (promo.type === "sale") {
         setSaleDiscountType(config.discountType || "percent");
         setSaleDiscountValue(config.discountValue || 0);
-        setSaleAppliesTo(config.appliesTo || "item");
-        setSaleItemId(config.itemId || "");
+        setSaleAppliesTo(config.appliesTo || "items");
+        setSaleSelectedItems(config.itemIds || []);
         setSaleCategoryId(config.categoryId || "");
       } else if (promo.type === "bundle") {
         setBundleQty(config.qty || 2);
@@ -181,6 +189,7 @@ export default function PromotionsPage() {
       return {
         triggerQty: bogoTriggerQty,
         freeQty: bogoFreeQty,
+        percentOff: bogoPercentOff,
         appliesTo: bogoAppliesTo,
         itemId: bogoAppliesTo === "item" ? bogoItemId : null,
         categoryId: bogoAppliesTo === "category" ? bogoCategoryId : null,
@@ -190,7 +199,7 @@ export default function PromotionsPage() {
         discountType: saleDiscountType,
         discountValue: saleDiscountValue,
         appliesTo: saleAppliesTo,
-        itemId: saleAppliesTo === "item" ? saleItemId : null,
+        itemIds: saleAppliesTo === "items" ? saleSelectedItems : [],
         categoryId: saleAppliesTo === "category" ? saleCategoryId : null,
       };
     } else if (type === "bundle") {
@@ -273,7 +282,11 @@ export default function PromotionsPage() {
     const config = JSON.parse(promo.configJson);
     
     if (promo.type === "bogo") {
-      return `Buy ${config.triggerQty}, Get ${config.freeQty} Free`;
+      const pct = config.percentOff ?? 100;
+      if (pct === 100) {
+        return `Buy ${config.triggerQty}, Get ${config.freeQty} Free`;
+      }
+      return `Buy ${config.triggerQty}, Get ${config.freeQty} at ${pct}% Off`;
     } else if (promo.type === "sale") {
       return config.discountType === "percent"
         ? `${config.discountValue}% Off`
@@ -282,6 +295,20 @@ export default function PromotionsPage() {
       return `Buy ${config.qty} for $${config.price}`;
     }
     return "";
+  };
+  
+  // Filter items for sale multi-select
+  const filteredSaleItems = items.filter((item) =>
+    item.name.toLowerCase().includes(saleItemSearch.toLowerCase()) ||
+    item.barcode.toLowerCase().includes(saleItemSearch.toLowerCase())
+  );
+  
+  const toggleSaleItem = (itemId: string) => {
+    setSaleSelectedItems((prev) =>
+      prev.includes(itemId)
+        ? prev.filter((id) => id !== itemId)
+        : [...prev, itemId]
+    );
   };
   
   if (loading) {
@@ -397,7 +424,7 @@ export default function PromotionsPage() {
         onClose={() => setModalOpen(false)}
         title={editingPromo ? "Edit Promotion" : "Create Promotion"}
       >
-        <div className="space-y-4">
+        <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
           <div>
             <label className="block text-sm font-medium text-gray-400 mb-1">Name</label>
             <Input
@@ -433,7 +460,7 @@ export default function PromotionsPage() {
           {/* BOGO Config */}
           {type === "bogo" && (
             <div className="space-y-3 p-3 bg-gray-800/50 rounded-lg">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs text-gray-400 mb-1">Buy Qty</label>
                   <Input
@@ -444,7 +471,7 @@ export default function PromotionsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">Get Free Qty</label>
+                  <label className="block text-xs text-gray-400 mb-1">Get Qty</label>
                   <Input
                     type="number"
                     min="1"
@@ -452,7 +479,21 @@ export default function PromotionsPage() {
                     onChange={(e) => setBogoFreeQty(parseInt(e.target.value) || 1)}
                   />
                 </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">% Off</label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={bogoPercentOff}
+                    onChange={(e) => setBogoPercentOff(parseInt(e.target.value) || 100)}
+                    placeholder="100 = free"
+                  />
+                </div>
               </div>
+              <p className="text-xs text-gray-500">
+                {bogoPercentOff === 100 ? "Get item(s) FREE" : `Get item(s) at ${bogoPercentOff}% off`}
+              </p>
               <div>
                 <label className="block text-xs text-gray-400 mb-1">Applies To</label>
                 <select
@@ -474,7 +515,7 @@ export default function PromotionsPage() {
                   >
                     <option value="">Select an item...</option>
                     {items.map((item) => (
-                      <option key={item.id} value={item.id}>{item.name}</option>
+                      <option key={item.id} value={item.id}>{item.name} ({item.barcode})</option>
                     ))}
                   </select>
                 </div>
@@ -532,24 +573,67 @@ export default function PromotionsPage() {
                   onChange={(e) => setSaleAppliesTo(e.target.value)}
                   className="w-full p-2 bg-gray-900 border border-gray-700 rounded-lg text-white"
                 >
-                  <option value="item">Specific Item</option>
+                  <option value="items">Selected Items</option>
                   <option value="category">Category</option>
                   <option value="all">All Items</option>
                 </select>
               </div>
-              {saleAppliesTo === "item" && (
+              {saleAppliesTo === "items" && (
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">Select Item</label>
-                  <select
-                    value={saleItemId}
-                    onChange={(e) => setSaleItemId(e.target.value)}
-                    className="w-full p-2 bg-gray-900 border border-gray-700 rounded-lg text-white"
-                  >
-                    <option value="">Select an item...</option>
-                    {items.map((item) => (
-                      <option key={item.id} value={item.id}>{item.name}</option>
-                    ))}
-                  </select>
+                  <label className="block text-xs text-gray-400 mb-1">Select Items</label>
+                  <div className="relative mb-2">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+                    <Input
+                      value={saleItemSearch}
+                      onChange={(e) => setSaleItemSearch(e.target.value)}
+                      placeholder="Search items by name or barcode..."
+                      className="pl-9"
+                    />
+                  </div>
+                  {saleSelectedItems.length > 0 && (
+                    <div className="mb-2 flex flex-wrap gap-1">
+                      {saleSelectedItems.map((itemId) => {
+                        const item = items.find((i) => i.id === itemId);
+                        return item ? (
+                          <span
+                            key={itemId}
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-600/30 text-blue-400 text-xs rounded"
+                          >
+                            {item.name}
+                            <button onClick={() => toggleSaleItem(itemId)}>
+                              <X className="h-3 w-3" />
+                            </button>
+                          </span>
+                        ) : null;
+                      })}
+                    </div>
+                  )}
+                  <div className="max-h-48 overflow-y-auto border border-gray-700 rounded-lg">
+                    {filteredSaleItems.length === 0 ? (
+                      <p className="p-3 text-sm text-gray-500 text-center">No items found</p>
+                    ) : (
+                      filteredSaleItems.map((item) => (
+                        <label
+                          key={item.id}
+                          className="flex items-center gap-3 p-2 hover:bg-gray-800 cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={saleSelectedItems.includes(item.id)}
+                            onChange={() => toggleSaleItem(item.id)}
+                            className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-600"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm truncate">{item.name}</p>
+                            <p className="text-xs text-gray-500 font-mono">{item.barcode}</p>
+                          </div>
+                          {saleSelectedItems.includes(item.id) && (
+                            <Check className="h-4 w-4 text-green-400" />
+                          )}
+                        </label>
+                      ))
+                    )}
+                  </div>
                 </div>
               )}
               {saleAppliesTo === "category" && (
@@ -615,7 +699,7 @@ export default function PromotionsPage() {
                   >
                     <option value="">Select an item...</option>
                     {items.map((item) => (
-                      <option key={item.id} value={item.id}>{item.name}</option>
+                      <option key={item.id} value={item.id}>{item.name} ({item.barcode})</option>
                     ))}
                   </select>
                 </div>
