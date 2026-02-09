@@ -8,6 +8,10 @@ import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/modal";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import {
+  SearchableItemSelect,
+  SearchableItemMultiSelect,
+} from "@/components/searchable-item-select";
+import {
   Plus,
   Pencil,
   Trash2,
@@ -17,9 +21,6 @@ import {
   Calendar,
   ToggleLeft,
   ToggleRight,
-  Search,
-  X,
-  Check,
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -72,17 +73,16 @@ export default function PromotionsPage() {
   // Config state based on type
   const [bogoTriggerQty, setBogoTriggerQty] = useState(1);
   const [bogoFreeQty, setBogoFreeQty] = useState(1);
-  const [bogoPercentOff, setBogoPercentOff] = useState(100); // NEW: percentage off for "get one"
+  const [bogoPercentOff, setBogoPercentOff] = useState(100);
   const [bogoAppliesTo, setBogoAppliesTo] = useState("item");
   const [bogoItemId, setBogoItemId] = useState("");
   const [bogoCategoryId, setBogoCategoryId] = useState("");
   
   const [saleDiscountType, setSaleDiscountType] = useState("percent");
   const [saleDiscountValue, setSaleDiscountValue] = useState(0);
-  const [saleAppliesTo, setSaleAppliesTo] = useState("items"); // items, category, all
-  const [saleSelectedItems, setSaleSelectedItems] = useState<string[]>([]); // Multi-select items
+  const [saleAppliesTo, setSaleAppliesTo] = useState("items");
+  const [saleSelectedItems, setSaleSelectedItems] = useState<string[]>([]);
   const [saleCategoryId, setSaleCategoryId] = useState("");
-  const [saleItemSearch, setSaleItemSearch] = useState("");
   
   const [bundleQty, setBundleQty] = useState(2);
   const [bundlePrice, setBundlePrice] = useState(0);
@@ -135,7 +135,6 @@ export default function PromotionsPage() {
     setSaleAppliesTo("items");
     setSaleSelectedItems([]);
     setSaleCategoryId("");
-    setSaleItemSearch("");
     setBundleQty(2);
     setBundlePrice(0);
     setBundleAppliesTo("item");
@@ -296,12 +295,6 @@ export default function PromotionsPage() {
     }
     return "";
   };
-  
-  // Filter items for sale multi-select
-  const filteredSaleItems = items.filter((item) =>
-    item.name.toLowerCase().includes(saleItemSearch.toLowerCase()) ||
-    item.barcode.toLowerCase().includes(saleItemSearch.toLowerCase())
-  );
   
   const toggleSaleItem = (itemId: string) => {
     setSaleSelectedItems((prev) =>
@@ -508,16 +501,12 @@ export default function PromotionsPage() {
               {bogoAppliesTo === "item" && (
                 <div>
                   <label className="block text-xs text-gray-400 mb-1">Select Item</label>
-                  <select
-                    value={bogoItemId}
-                    onChange={(e) => setBogoItemId(e.target.value)}
-                    className="w-full p-2 bg-gray-900 border border-gray-700 rounded-lg text-white"
-                  >
-                    <option value="">Select an item...</option>
-                    {items.map((item) => (
-                      <option key={item.id} value={item.id}>{item.name} ({item.barcode})</option>
-                    ))}
-                  </select>
+                  <SearchableItemSelect
+                    items={items}
+                    selectedId={bogoItemId}
+                    onSelect={setBogoItemId}
+                    placeholder="Search by name or barcode..."
+                  />
                 </div>
               )}
               {bogoAppliesTo === "category" && (
@@ -581,59 +570,12 @@ export default function PromotionsPage() {
               {saleAppliesTo === "items" && (
                 <div>
                   <label className="block text-xs text-gray-400 mb-1">Select Items</label>
-                  <div className="relative mb-2">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
-                    <Input
-                      value={saleItemSearch}
-                      onChange={(e) => setSaleItemSearch(e.target.value)}
-                      placeholder="Search items by name or barcode..."
-                      className="pl-9"
-                    />
-                  </div>
-                  {saleSelectedItems.length > 0 && (
-                    <div className="mb-2 flex flex-wrap gap-1">
-                      {saleSelectedItems.map((itemId) => {
-                        const item = items.find((i) => i.id === itemId);
-                        return item ? (
-                          <span
-                            key={itemId}
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-600/30 text-blue-400 text-xs rounded"
-                          >
-                            {item.name}
-                            <button onClick={() => toggleSaleItem(itemId)}>
-                              <X className="h-3 w-3" />
-                            </button>
-                          </span>
-                        ) : null;
-                      })}
-                    </div>
-                  )}
-                  <div className="max-h-48 overflow-y-auto border border-gray-700 rounded-lg">
-                    {filteredSaleItems.length === 0 ? (
-                      <p className="p-3 text-sm text-gray-500 text-center">No items found</p>
-                    ) : (
-                      filteredSaleItems.map((item) => (
-                        <label
-                          key={item.id}
-                          className="flex items-center gap-3 p-2 hover:bg-gray-800 cursor-pointer"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={saleSelectedItems.includes(item.id)}
-                            onChange={() => toggleSaleItem(item.id)}
-                            className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-600"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm truncate">{item.name}</p>
-                            <p className="text-xs text-gray-500 font-mono">{item.barcode}</p>
-                          </div>
-                          {saleSelectedItems.includes(item.id) && (
-                            <Check className="h-4 w-4 text-green-400" />
-                          )}
-                        </label>
-                      ))
-                    )}
-                  </div>
+                  <SearchableItemMultiSelect
+                    items={items}
+                    selectedIds={saleSelectedItems}
+                    onToggle={toggleSaleItem}
+                    placeholder="Search by name or barcode..."
+                  />
                 </div>
               )}
               {saleAppliesTo === "category" && (
@@ -692,16 +634,12 @@ export default function PromotionsPage() {
               {bundleAppliesTo === "item" && (
                 <div>
                   <label className="block text-xs text-gray-400 mb-1">Select Item</label>
-                  <select
-                    value={bundleItemId}
-                    onChange={(e) => setBundleItemId(e.target.value)}
-                    className="w-full p-2 bg-gray-900 border border-gray-700 rounded-lg text-white"
-                  >
-                    <option value="">Select an item...</option>
-                    {items.map((item) => (
-                      <option key={item.id} value={item.id}>{item.name} ({item.barcode})</option>
-                    ))}
-                  </select>
+                  <SearchableItemSelect
+                    items={items}
+                    selectedId={bundleItemId}
+                    onSelect={setBundleItemId}
+                    placeholder="Search by name or barcode..."
+                  />
                 </div>
               )}
               {bundleAppliesTo === "category" && (

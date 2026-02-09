@@ -78,6 +78,8 @@ model Item {
   transactionItems TransactionItem[]
   
   @@unique([companyId, barcode])
+  @@index([companyId, isActive])
+  @@index([companyId, name])
 }
 
 model Employee {

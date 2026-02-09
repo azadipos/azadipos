@@ -49,6 +49,7 @@ export default function TransactionPage() {
   const lastKeyTimeRef = useRef<number>(0);
   const scannerModeRef = useRef<boolean>(false);
   const autoSubmitTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   const [cart, setCart] = useState<CartItem[]>([]);
   const [barcode, setBarcode] = useState("");
@@ -60,10 +61,11 @@ export default function TransactionPage() {
   const [showSearch, setShowSearch] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
   
-  // Auto-scan detection: scanners type very fast (< 50ms between keys)
-  const SCANNER_THRESHOLD_MS = 50;
+  // Constants for detection
+  const SCANNER_THRESHOLD_MS = 50;  // Scanners type < 50ms between keys
   const MIN_BARCODE_LENGTH = 4;
-  const SEARCH_DELAY_MS = 300;
+  const SEARCH_DELAY_MS = 150;  // Reduced for faster response
+  const AUTO_SUBMIT_DELAY_MS = 100;  // Short delay after scanner stops
   
   // Weight entry modal
   const [weightModalOpen, setWeightModalOpen] = useState(false);
@@ -100,9 +102,9 @@ export default function TransactionPage() {
     return () => document.removeEventListener("click", handleClick);
   }, [weightModalOpen]);
   
-  // Search items for manual typing
+  // Search items - optimized with debounce
   const searchItems = useCallback(async (query: string) => {
-    if (query.length < 2) {
+    if (query.length < 1) {
       setSearchResults([]);
       setShowSearch(false);
       return;
@@ -111,7 +113,7 @@ export default function TransactionPage() {
     setSearchLoading(true);
     try {
       const res = await fetch(
-        `/api/items/search?companyId=${companyId}&q=${encodeURIComponent(query)}`
+        `/api/items/search?companyId=${companyId}&q=${encodeURIComponent(query)}&limit=15`
       );
       if (res.ok) {
         const data = await res.json();
@@ -276,13 +278,38 @@ export default function TransactionPage() {
     router.push(`/pos/${companyId}/payment`);
   };
   
+  // Handle paste event - treat as scanner input
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    const pastedText = e.clipboardData.getData("text").trim();
+    
+    if (pastedText.length >= MIN_BARCODE_LENGTH) {
+      // Pasted text is treated like scanner input - auto lookup
+      setBarcode(pastedText);
+      setShowSearch(false);
+      
+      // Clear any pending timeouts
+      if (autoSubmitTimeoutRef.current) {
+        clearTimeout(autoSubmitTimeoutRef.current);
+      }
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+      
+      // Auto-submit after short delay
+      autoSubmitTimeoutRef.current = setTimeout(() => {
+        lookupItem(pastedText);
+      }, 50);
+    }
+  };
+  
   // Handle barcode input with scanner detection
   const handleBarcodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value;
     const now = Date.now();
     const timeSinceLastKey = now - lastKeyTimeRef.current;
     
-    // Detect scanner mode: very fast typing
+    // Detect scanner mode: very fast typing (< 50ms between keys)
     if (timeSinceLastKey < SCANNER_THRESHOLD_MS && newValue.length > barcode.length) {
       scannerModeRef.current = true;
     } else if (timeSinceLastKey >= SCANNER_THRESHOLD_MS * 3) {
@@ -294,9 +321,12 @@ export default function TransactionPage() {
     setBarcode(newValue);
     setError("");
     
-    // Clear existing timeout
+    // Clear existing timeouts
     if (autoSubmitTimeoutRef.current) {
       clearTimeout(autoSubmitTimeoutRef.current);
+    }
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
     }
     
     if (scannerModeRef.current) {
@@ -306,10 +336,10 @@ export default function TransactionPage() {
           lookupItem(newValue);
           scannerModeRef.current = false;
         }
-      }, 100);
+      }, AUTO_SUBMIT_DELAY_MS);
     } else {
-      // Manual typing mode: show search dropdown
-      autoSubmitTimeoutRef.current = setTimeout(() => {
+      // Manual typing mode: show search dropdown after short delay
+      searchTimeoutRef.current = setTimeout(() => {
         searchItems(newValue);
       }, SEARCH_DELAY_MS);
     }
@@ -320,6 +350,9 @@ export default function TransactionPage() {
       e.preventDefault();
       if (autoSubmitTimeoutRef.current) {
         clearTimeout(autoSubmitTimeoutRef.current);
+      }
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
       }
       setShowSearch(false);
       lookupItem(barcode);
@@ -379,14 +412,15 @@ export default function TransactionPage() {
               value={barcode}
               onChange={handleBarcodeChange}
               onKeyDown={handleBarcodeKeyDown}
-              onFocus={() => barcode.length >= 2 && searchResults.length > 0 && setShowSearch(true)}
+              onPaste={handlePaste}
+              onFocus={() => barcode.length >= 1 && searchResults.length > 0 && setShowSearch(true)}
               onBlur={() => setTimeout(() => setShowSearch(false), 200)}
               placeholder="Scan barcode or type to search..."
               className="pl-10 h-14 text-lg bg-pos-card border-pos-border text-white"
               autoFocus
               autoComplete="off"
             />
-            {loading && (
+            {(loading || searchLoading) && (
               <div className="absolute right-3 top-1/2 -translate-y-1/2">
                 <LoadingSpinner size="sm" />
               </div>
@@ -404,7 +438,10 @@ export default function TransactionPage() {
                   {searchResults.map((item) => (
                     <button
                       key={item.id}
-                      onClick={() => selectSearchItem(item)}
+                      onMouseDown={(e) => {
+                        e.preventDefault(); // Prevent blur before click
+                        selectSearchItem(item);
+                      }}
                       className="w-full p-3 text-left hover:bg-gray-700 flex items-center gap-3 border-b border-gray-700 last:border-b-0"
                     >
                       <div className="flex-1 min-w-0">
@@ -438,7 +475,7 @@ export default function TransactionPage() {
                 <div className="flex flex-col items-center justify-center h-full text-center">
                   <Package className="h-16 w-16 text-gray-700 mb-4" />
                   <p className="text-gray-500">Scan items to begin</p>
-                  <p className="text-xs text-gray-600 mt-2">Scanner auto-detects • Type to search</p>
+                  <p className="text-xs text-gray-600 mt-2">Scanner auto-detects • Paste barcode • Type to search</p>
                 </div>
               ) : (
                 cart?.map((item) => (
@@ -560,6 +597,7 @@ export default function TransactionPage() {
         onClose={() => {
           setWeightModalOpen(false);
           setPendingWeightItem(null);
+          setWeightInput("");
           barcodeInputRef.current?.focus();
         }}
         title="Enter Weight"
@@ -567,28 +605,32 @@ export default function TransactionPage() {
         <div className="space-y-4">
           <div className="text-center">
             <p className="text-lg font-medium">{pendingWeightItem?.name}</p>
-            <p className="text-gray-400">{formatCurrency(pendingWeightItem?.price ?? 0)} / lb</p>
-          </div>
-          
-          <div className="p-4 bg-pos-card rounded-lg text-center">
-            <p className="text-4xl font-mono font-bold">
-              {weightInput || "0.00"}
-              <span className="text-lg text-gray-400 ml-2">lb</span>
+            <p className="text-green-400">
+              {formatCurrency(pendingWeightItem?.price ?? 0)}/lb
             </p>
           </div>
           
+          <div className="text-center py-4">
+            <span className="text-4xl font-mono">
+              {weightInput || "0.00"}
+            </span>
+            <span className="text-xl text-gray-400 ml-2">lb</span>
+          </div>
+          
           <NumericKeypad
-            showDecimal
-            onKeyPress={(key) => {
-              if (key === "." && weightInput.includes(".")) return;
-              if (weightInput.split(".")[1]?.length >= 2) return;
-              setWeightInput(weightInput + key);
-            }}
+            onKeyPress={(key) => setWeightInput((prev) => prev + key)}
             onClear={() => setWeightInput("")}
-            onBackspace={() => setWeightInput(weightInput.slice(0, -1))}
-            onSubmit={handleWeightSubmit}
-            submitLabel="Add to Cart"
+            onBackspace={() => setWeightInput((prev) => prev.slice(0, -1))}
+            showDecimal
           />
+          
+          <Button
+            className="w-full h-14 text-lg"
+            onClick={handleWeightSubmit}
+            disabled={!weightInput || parseFloat(weightInput) <= 0}
+          >
+            Add to Cart
+          </Button>
         </div>
       </Modal>
     </div>

@@ -6,8 +6,8 @@ import { AdminLayout } from "@/components/admin-layout";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { formatCurrency } from "@/lib/helpers";
-import { Package, AlertTriangle, Truck, TrendingDown } from "lucide-react";
-import { motion } from "framer-motion";
+import { Package, AlertTriangle, Truck, TrendingDown, CheckCircle2 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface ReorderItem {
   id: string;
@@ -36,6 +36,7 @@ export default function ReorderPage() {
   const [items, setItems] = useState<ReorderItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [orderedItems, setOrderedItems] = useState<Set<string>>(new Set());
   
   useEffect(() => {
     fetchReorderItems();
@@ -53,8 +54,11 @@ export default function ReorderPage() {
     }
   };
   
+  // Filter out ordered items
+  const visibleItems = (items ?? []).filter((item) => !orderedItems.has(item.id));
+  
   // Group items by vendor
-  const groupedItems: GroupedItems = (items ?? []).reduce((acc, item) => {
+  const groupedItems: GroupedItems = visibleItems.reduce((acc, item) => {
     const vendorId = item?.vendor?.id ?? "no-vendor";
     const vendorName = item?.vendor?.name ?? "No Vendor Assigned";
     
@@ -97,7 +101,22 @@ export default function ReorderPage() {
   
   const isAllVendorSelected = (vendorId: string) => {
     const vendorItems = groupedItems[vendorId]?.items ?? [];
-    return vendorItems.every((item) => selectedItems.has(item.id));
+    return vendorItems.length > 0 && vendorItems.every((item) => selectedItems.has(item.id));
+  };
+  
+  const markAsOrdered = () => {
+    // Move selected items to ordered set (removes them from view)
+    setOrderedItems((prev) => {
+      const next = new Set(prev);
+      selectedItems.forEach((id) => next.add(id));
+      return next;
+    });
+    setSelectedItems(new Set());
+  };
+  
+  const undoOrdered = () => {
+    // Restore all ordered items back to the list
+    setOrderedItems(new Set());
   };
   
   if (loading) {
@@ -123,96 +142,128 @@ export default function ReorderPage() {
               Items below reorder level, grouped by supplier
             </p>
           </div>
-          {selectedItems.size > 0 && (
-            <div className="text-sm text-gray-400">
-              {selectedItems.size} item(s) selected
-            </div>
-          )}
+          <div className="flex items-center gap-3">
+            {orderedItems.size > 0 && (
+              <Button
+                variant="outline"
+                onClick={undoOrdered}
+                className="border-gray-600"
+              >
+                Undo Ordered ({orderedItems.size})
+              </Button>
+            )}
+            {selectedItems.size > 0 && (
+              <Button
+                onClick={markAsOrdered}
+                className="bg-green-600 hover:bg-green-700"
+              >
+                <CheckCircle2 className="h-4 w-4 mr-2" />
+                Mark as Ordered ({selectedItems.size})
+              </Button>
+            )}
+          </div>
+        </div>
+        
+        {/* Info about Order Qty */}
+        <div className="p-3 bg-blue-900/20 border border-blue-700/30 rounded-lg text-sm text-blue-300">
+          <strong>Order Qty</strong> = Suggested quantity to order based on: (reorder level × 2) - current stock.
+          This ensures you have buffer stock above the minimum reorder threshold.
         </div>
         
         {Object.keys(groupedItems).length === 0 ? (
           <div className="text-center py-20 bg-gray-800/50 rounded-lg border border-gray-700">
             <Package className="h-16 w-16 text-green-500 mx-auto mb-4" />
             <h2 className="text-xl font-semibold text-gray-300">All stocked up!</h2>
-            <p className="text-gray-500 mt-2">No items have reached their reorder level</p>
+            <p className="text-gray-500 mt-2">
+              {orderedItems.size > 0 
+                ? `${orderedItems.size} item(s) marked as ordered`
+                : "No items have reached their reorder level"}
+            </p>
           </div>
         ) : (
-          Object.entries(groupedItems).map(([vendorId, group], groupIndex) => (
-            <motion.div
-              key={vendorId}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: groupIndex * 0.1 }}
-              className="bg-gray-800/50 border border-gray-700 rounded-lg overflow-hidden"
-            >
-              <div className="p-4 bg-gray-800 border-b border-gray-700 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Truck className="h-5 w-5 text-orange-400" />
-                  <div>
-                    <h3 className="font-semibold text-lg">{group.vendorName}</h3>
-                    <p className="text-sm text-gray-500">{group.items.length} item(s) need reorder</p>
+          <AnimatePresence>
+            {Object.entries(groupedItems).map(([vendorId, group], groupIndex) => (
+              <motion.div
+                key={vendorId}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ delay: groupIndex * 0.1 }}
+                className="bg-gray-800/50 border border-gray-700 rounded-lg overflow-hidden"
+              >
+                <div className="p-4 bg-gray-800 border-b border-gray-700 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Truck className="h-5 w-5 text-orange-400" />
+                    <div>
+                      <h3 className="font-semibold text-lg">{group.vendorName}</h3>
+                      <p className="text-sm text-gray-500">{group.items.length} item(s) need reorder</p>
+                    </div>
                   </div>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    if (isAllVendorSelected(vendorId)) {
-                      deselectAllVendor(vendorId);
-                    } else {
-                      selectAllVendor(vendorId);
-                    }
-                  }}
-                  className="border-gray-600"
-                >
-                  {isAllVendorSelected(vendorId) ? "Deselect All" : "Select All"}
-                </Button>
-              </div>
-              
-              <div className="divide-y divide-gray-700">
-                {group.items.map((item, itemIndex) => (
-                  <div
-                    key={item.id}
-                    className={`p-4 flex items-center gap-4 hover:bg-gray-800/50 transition-colors ${
-                      selectedItems.has(item.id) ? "bg-blue-900/20" : ""
-                    }`}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (isAllVendorSelected(vendorId)) {
+                        deselectAllVendor(vendorId);
+                      } else {
+                        selectAllVendor(vendorId);
+                      }
+                    }}
+                    className="border-gray-600"
                   >
-                    <input
-                      type="checkbox"
-                      checked={selectedItems.has(item.id)}
-                      onChange={() => toggleItem(item.id)}
-                      className="h-5 w-5 rounded border-gray-600 bg-gray-800 text-blue-600"
-                    />
-                    
-                    <div className="flex-1">
-                      <p className="font-medium">{item.name}</p>
-                      <p className="text-sm text-gray-500 font-mono">{item.barcode}</p>
-                    </div>
-                    
-                    <div className="grid grid-cols-3 gap-6 text-center">
-                      <div>
-                        <p className="text-xs text-gray-500">Current</p>
-                        <p className="font-bold text-red-400">{item.currentStock}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-500">Reorder At</p>
-                        <p className="font-medium text-yellow-400">{item.reorderLevel}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-500">Order Qty</p>
-                        <p className="font-medium text-green-400">{item.reorderQty}</p>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center gap-2 text-sm text-gray-400">
-                      <TrendingDown className="h-4 w-4" />
-                      <span>{item.soldSinceLastIntake} sold since intake</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-          ))
+                    {isAllVendorSelected(vendorId) ? "Deselect All" : "Select All"}
+                  </Button>
+                </div>
+                
+                <div className="divide-y divide-gray-700">
+                  <AnimatePresence>
+                    {group.items.map((item) => (
+                      <motion.div
+                        key={item.id}
+                        initial={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className={`p-4 flex items-center gap-4 hover:bg-gray-800/50 transition-colors ${
+                          selectedItems.has(item.id) ? "bg-blue-900/20" : ""
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedItems.has(item.id)}
+                          onChange={() => toggleItem(item.id)}
+                          className="h-5 w-5 rounded border-gray-600 bg-gray-800 text-blue-600"
+                        />
+                        
+                        <div className="flex-1">
+                          <p className="font-medium">{item.name}</p>
+                          <p className="text-sm text-gray-500 font-mono">{item.barcode}</p>
+                        </div>
+                        
+                        <div className="grid grid-cols-3 gap-6 text-center">
+                          <div>
+                            <p className="text-xs text-gray-500">Current</p>
+                            <p className="font-bold text-red-400">{item.currentStock}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">Reorder At</p>
+                            <p className="font-medium text-yellow-400">{item.reorderLevel}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">Order Qty</p>
+                            <p className="font-medium text-green-400">{item.reorderQty}</p>
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center gap-2 text-sm text-gray-400">
+                          <TrendingDown className="h-4 w-4" />
+                          <span>{item.soldSinceLastIntake} sold (30d)</span>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
         )}
       </div>
     </AdminLayout>
