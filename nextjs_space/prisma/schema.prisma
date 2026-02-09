@@ -170,15 +170,19 @@ model Promotion {
 }
 
 model StoreCredit {
-  id            String    @id @default(cuid())
-  companyId     String
-  company       Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  barcode       String    @unique
-  amount        Float
-  isUsed        Boolean   @default(false)
-  createdAt     DateTime  @default(now())
-  usedAt        DateTime?
-  transactionId String?
+  id                      String    @id @default(cuid())
+  companyId               String
+  company                 Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  barcode                 String    @unique
+  amount                  Float
+  isUsed                  Boolean   @default(false)
+  createdAt               DateTime  @default(now())
+  usedAt                  DateTime?
+  transactionId           String?
+  redeemedTransactionId   String?
+  description             String?
+  issuedByEmployeeId      String?
+  authorizedByEmployeeId  String?
 }
 
 model ReceivingLog {

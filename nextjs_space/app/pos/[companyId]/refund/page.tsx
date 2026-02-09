@@ -17,6 +17,7 @@ import {
   CreditCard,
   Banknote,
   Gift,
+  FileQuestion,
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -56,17 +57,24 @@ export default function RefundPage() {
   const companyId = params?.companyId as string;
   const { employee, shiftId } = usePOS();
   
+  // Mode selection: "receipt" or "no_receipt"
+  const [mode, setMode] = useState<"select" | "receipt" | "no_receipt">("select");
+  
   const [transactionId, setTransactionId] = useState("");
   const [transaction, setTransaction] = useState<Transaction | null>(null);
   const [refundItems, setRefundItems] = useState<RefundItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [step, setStep] = useState<"search" | "select" | "method" | "complete">("search");
+  const [step, setStep] = useState<"search" | "select" | "method" | "amount" | "complete">("search");
   
   const [refundMethod, setRefundMethod] = useState<"original" | "cash" | "store_credit">("original");
   const [managerPinModal, setManagerPinModal] = useState(false);
   const [managerPin, setManagerPin] = useState("");
   const [authorizedManagerId, setAuthorizedManagerId] = useState<string | null>(null);
+  
+  // No-receipt store credit amount
+  const [noReceiptAmount, setNoReceiptAmount] = useState("");
+  const [noReceiptDescription, setNoReceiptDescription] = useState("");
   
   const [storeCreditBarcode, setStoreCreditBarcode] = useState("");
   
@@ -169,6 +177,11 @@ export default function RefundPage() {
     setManagerPinModal(true);
   };
   
+  const proceedNoReceiptAmount = () => {
+    // Manager authorization required for no-receipt refunds
+    setManagerPinModal(true);
+  };
+  
   const verifyManagerPin = async () => {
     if (managerPin.length < 4) return;
     
@@ -189,10 +202,55 @@ export default function RefundPage() {
       setAuthorizedManagerId(manager.id);
       setManagerPinModal(false);
       setManagerPin("");
-      setStep("method");
+      
+      if (mode === "no_receipt") {
+        // Process no-receipt store credit
+        processNoReceiptCredit(manager.id);
+      } else {
+        setStep("method");
+      }
     } catch (err) {
       console.error("PIN verification error:", err);
       setError("Failed to verify PIN");
+    }
+  };
+  
+  const processNoReceiptCredit = async (managerId: string) => {
+    const amount = parseFloat(noReceiptAmount);
+    if (isNaN(amount) || amount <= 0) {
+      setError("Enter a valid amount");
+      return;
+    }
+    
+    setLoading(true);
+    setError("");
+    
+    try {
+      // Create store credit without linked transaction
+      const creditRes = await fetch("/api/store-credits", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId,
+          amount,
+          description: noReceiptDescription || "No receipt return",
+          issuedByEmployeeId: employee?.id,
+          authorizedByEmployeeId: managerId,
+        }),
+      });
+      
+      if (!creditRes.ok) {
+        throw new Error("Failed to create store credit");
+      }
+      
+      const credit = await creditRes.json();
+      setStoreCreditBarcode(credit.barcode);
+      setStep("complete");
+    } catch (err) {
+      console.error("Store credit error:", err);
+      setError("Failed to create store credit");
+    } finally {
+      setLoading(false);
     }
   };
   
@@ -245,6 +303,8 @@ export default function RefundPage() {
             companyId,
             amount: refundTotals.total,
             transactionId: refundTxn.id,
+            issuedByEmployeeId: employee?.id,
+            authorizedByEmployeeId: authorizedManagerId,
           }),
         });
         
@@ -272,16 +332,205 @@ export default function RefundPage() {
   
   if (!employee) return null;
   
+  // Mode selection screen
+  if (mode === "select") {
+    return (
+      <div className="min-h-screen flex flex-col p-4">
+        <div className="flex items-center justify-between mb-6">
+          <Button
+            variant="ghost"
+            onClick={() => router.push(`/pos/${companyId}/menu`)}
+            className="text-gray-400 hover:text-white"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Menu
+          </Button>
+          <h1 className="text-xl font-bold">Process Refund</h1>
+          <div className="w-24" />
+        </div>
+        
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex-1 flex flex-col items-center justify-center max-w-lg mx-auto w-full"
+        >
+          <h2 className="text-2xl font-semibold mb-2">Select Refund Type</h2>
+          <p className="text-gray-400 text-center mb-8">
+            Does the customer have a receipt?
+          </p>
+          
+          <div className="w-full space-y-4">
+            <button
+              onClick={() => {
+                setMode("receipt");
+                setStep("search");
+              }}
+              className="w-full p-6 rounded-lg border border-gray-700 hover:border-green-500 hover:bg-green-500/10 transition-all flex items-center gap-4"
+            >
+              <div className="p-3 bg-green-600/20 rounded-lg">
+                <Receipt className="h-8 w-8 text-green-400" />
+              </div>
+              <div className="text-left">
+                <p className="text-lg font-medium">With Receipt</p>
+                <p className="text-sm text-gray-400">Lookup transaction and choose refund method</p>
+              </div>
+            </button>
+            
+            <button
+              onClick={() => {
+                setMode("no_receipt");
+                setStep("amount");
+              }}
+              className="w-full p-6 rounded-lg border border-gray-700 hover:border-yellow-500 hover:bg-yellow-500/10 transition-all flex items-center gap-4"
+            >
+              <div className="p-3 bg-yellow-600/20 rounded-lg">
+                <FileQuestion className="h-8 w-8 text-yellow-400" />
+              </div>
+              <div className="text-left">
+                <p className="text-lg font-medium">No Receipt</p>
+                <p className="text-sm text-gray-400">Issue store credit only (requires manager approval)</p>
+              </div>
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+  
+  // No receipt flow - amount entry
+  if (mode === "no_receipt" && step === "amount") {
+    return (
+      <div className="min-h-screen flex flex-col p-4">
+        <div className="flex items-center justify-between mb-6">
+          <Button
+            variant="ghost"
+            onClick={() => setMode("select")}
+            className="text-gray-400 hover:text-white"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back
+          </Button>
+          <h1 className="text-xl font-bold">No Receipt Return</h1>
+          <div className="w-24" />
+        </div>
+        
+        {error && (
+          <div className="mb-4 p-3 bg-red-900/50 border border-red-700 rounded-lg flex items-center gap-2">
+            <AlertCircle className="h-5 w-5 text-red-400" />
+            <span className="text-red-200">{error}</span>
+          </div>
+        )}
+        
+        <div className="p-4 mb-6 bg-yellow-900/30 border border-yellow-700/50 rounded-lg">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="h-5 w-5 text-yellow-500 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-yellow-200 font-medium">Store Credit Only</p>
+              <p className="text-yellow-200/70 text-sm">Without a receipt, only store credit can be issued. Manager authorization is required.</p>
+            </div>
+          </div>
+        </div>
+        
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex-1 flex flex-col items-center justify-center max-w-md mx-auto w-full"
+        >
+          <Gift className="h-16 w-16 text-yellow-500 mb-4" />
+          <h2 className="text-xl font-semibold mb-6">Enter Store Credit Amount</h2>
+          
+          <div className="w-full space-y-4">
+            <div className="p-4 bg-pos-card border border-pos-border rounded-lg text-center">
+              <p className="text-gray-400 text-sm mb-1">Credit Amount</p>
+              <p className="text-4xl font-mono font-bold text-yellow-400">
+                {formatCurrency(parseFloat(noReceiptAmount) || 0)}
+              </p>
+            </div>
+            
+            <Input
+              value={noReceiptDescription}
+              onChange={(e) => setNoReceiptDescription(e.target.value)}
+              placeholder="Reason / Description (optional)"
+              className="h-12"
+            />
+            
+            <NumericKeypad
+              onKeyPress={(key) => {
+                if (key === "." && noReceiptAmount.includes(".")) return;
+                setNoReceiptAmount(noReceiptAmount + key);
+              }}
+              onClear={() => setNoReceiptAmount("")}
+              onBackspace={() => setNoReceiptAmount(noReceiptAmount.slice(0, -1))}
+              showDecimal
+            />
+            
+            <Button
+              variant="pos"
+              size="pos-large"
+              className="w-full bg-yellow-600 hover:bg-yellow-700"
+              onClick={proceedNoReceiptAmount}
+              disabled={loading || !noReceiptAmount || parseFloat(noReceiptAmount) <= 0}
+            >
+              {loading ? <LoadingSpinner size="sm" /> : "Request Manager Approval"}
+            </Button>
+          </div>
+        </motion.div>
+        
+        {/* Manager PIN Modal */}
+        <Modal
+          isOpen={managerPinModal}
+          onClose={() => {
+            setManagerPinModal(false);
+            setManagerPin("");
+          }}
+          title="Manager Authorization Required"
+        >
+          <div className="text-center">
+            <p className="text-gray-400 mb-2">Enter manager PIN to authorize</p>
+            <p className="text-yellow-400 font-semibold mb-4">
+              No-receipt store credit: {formatCurrency(parseFloat(noReceiptAmount) || 0)}
+            </p>
+            
+            <div className="flex justify-center gap-3 mb-4">
+              {[0, 1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className={`w-5 h-5 rounded-full transition-colors ${
+                    i < managerPin.length ? "bg-green-500" : "bg-gray-700"
+                  }`}
+                />
+              ))}
+            </div>
+            
+            <NumericKeypad
+              onKeyPress={(key) => managerPin.length < 4 && setManagerPin(managerPin + key)}
+              onClear={() => setManagerPin("")}
+              onBackspace={() => setManagerPin(managerPin.slice(0, -1))}
+              onSubmit={verifyManagerPin}
+              submitLabel="Authorize"
+            />
+          </div>
+        </Modal>
+      </div>
+    );
+  }
+  
   return (
     <div className="min-h-screen flex flex-col p-4">
       <div className="flex items-center justify-between mb-6">
         <Button
           variant="ghost"
-          onClick={() => router.push(`/pos/${companyId}/menu`)}
+          onClick={() => {
+            if (step === "search") {
+              setMode("select");
+            } else {
+              router.push(`/pos/${companyId}/menu`);
+            }
+          }}
           className="text-gray-400 hover:text-white"
         >
           <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Menu
+          {step === "search" ? "Back" : "Back to Menu"}
         </Button>
         <h1 className="text-xl font-bold">Process Refund</h1>
         <div className="w-24" />
@@ -501,9 +750,14 @@ export default function RefundPage() {
           <div className="w-20 h-20 bg-green-600/20 rounded-full flex items-center justify-center mb-4">
             <Check className="h-10 w-10 text-green-400" />
           </div>
-          <h2 className="text-2xl font-bold mb-2">Refund Complete</h2>
+          <h2 className="text-2xl font-bold mb-2">
+            {mode === "no_receipt" ? "Store Credit Issued" : "Refund Complete"}
+          </h2>
           <p className="text-gray-400 mb-6">
-            {formatCurrency(refundTotals.total)} refunded via {refundMethod === "store_credit" ? "store credit" : refundMethod}
+            {mode === "no_receipt" 
+              ? `${formatCurrency(parseFloat(noReceiptAmount))} store credit issued`
+              : `${formatCurrency(refundTotals.total)} refunded via ${refundMethod === "store_credit" ? "store credit" : refundMethod}`
+            }
           </p>
           
           {storeCreditBarcode && (
@@ -511,6 +765,7 @@ export default function RefundPage() {
               <p className="text-sm text-gray-400 mb-2">Store Credit Barcode</p>
               <p className="text-2xl font-mono font-bold text-yellow-400">{storeCreditBarcode}</p>
               <p className="text-sm text-gray-500 mt-2">Print receipt with barcode for customer</p>
+              <p className="text-xs text-gray-600 mt-1">Customer can scan this at checkout to redeem</p>
             </div>
           )}
           
@@ -548,7 +803,7 @@ export default function RefundPage() {
           </div>
           
           <NumericKeypad
-            onKeyPress={(key) => managerPin.length < 6 && setManagerPin(managerPin + key)}
+            onKeyPress={(key) => managerPin.length < 4 && setManagerPin(managerPin + key)}
             onClear={() => setManagerPin("")}
             onBackspace={() => setManagerPin(managerPin.slice(0, -1))}
             onSubmit={verifyManagerPin}
@@ -557,5 +812,16 @@ export default function RefundPage() {
         </div>
       </Modal>
     </div>
+  );
+}
+
+function Receipt({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" />
+      <path d="M8 7h8" />
+      <path d="M8 11h8" />
+      <path d="M8 15h5" />
+    </svg>
   );
 }

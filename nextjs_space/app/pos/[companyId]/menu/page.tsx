@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { usePOS } from "@/lib/pos-context";
-import { ShoppingCart, LogOut, RotateCcw, DollarSign, Lock } from "lucide-react";
+import { ShoppingCart, LogOut, RotateCcw, DollarSign, ClipboardList } from "lucide-react";
 import { motion } from "framer-motion";
 
 export default function POSMenuPage() {
@@ -75,10 +75,10 @@ export default function POSMenuPage() {
               variant="pos"
               size="pos-large"
               className="w-full h-40 flex flex-col gap-3 hover:border-blue-500"
-              onClick={() => router.push(`/pos/${companyId}/closeout`)}
+              onClick={() => router.push(`/pos/${companyId}/shift-report`)}
             >
-              <Lock className="h-10 w-10 text-blue-400" />
-              <span>Close Out</span>
+              <ClipboardList className="h-10 w-10 text-blue-400" />
+              <span>End of Day</span>
             </Button>
           </motion.div>
           

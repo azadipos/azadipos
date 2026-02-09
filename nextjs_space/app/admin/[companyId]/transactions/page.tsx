@@ -6,8 +6,9 @@ import { AdminLayout } from "@/components/admin-layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/modal";
+import { NumericKeypad } from "@/components/numeric-keypad";
 import { LoadingSpinner } from "@/components/loading-spinner";
-import { Receipt, Calendar, ChevronDown, ChevronUp, Filter, RotateCcw, DollarSign, XCircle } from "lucide-react";
+import { Receipt, Calendar, ChevronDown, ChevronUp, Filter, RotateCcw, DollarSign, XCircle, Trash2, AlertTriangle } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/helpers";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -30,8 +31,10 @@ interface Transaction {
   paymentMethod: string;
   cashGiven: number | null;
   changeDue: number | null;
+  status: string;
   createdAt: string;
   employee: { id: string; name: string } | null;
+  authorizedBy: { id: string; name: string } | null;
   items: TransactionItem[];
 }
 
@@ -51,7 +54,13 @@ export default function TransactionsPage() {
   const [endDate, setEndDate] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+  
+  // Delete transaction state
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [transactionToDelete, setTransactionToDelete] = useState<Transaction | null>(null);
+  const [managerPin, setManagerPin] = useState("");
+  const [deleteError, setDeleteError] = useState("");
+  const [deleting, setDeleting] = useState(false);
   
   useEffect(() => {
     fetchTransactions();
@@ -87,20 +96,77 @@ export default function TransactionsPage() {
     setTimeout(fetchTransactions, 0);
   };
   
+  const openDeleteModal = (txn: Transaction) => {
+    setTransactionToDelete(txn);
+    setManagerPin("");
+    setDeleteError("");
+    setDeleteModalOpen(true);
+  };
+  
+  const verifyAndDelete = async () => {
+    if (managerPin.length < 4) {
+      setDeleteError("Enter manager PIN");
+      return;
+    }
+    
+    setDeleting(true);
+    setDeleteError("");
+    
+    try {
+      // Verify manager PIN
+      const pinRes = await fetch("/api/employees/verify-pin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyId, pin: managerPin, requireManager: true }),
+      });
+      
+      if (!pinRes.ok) {
+        setDeleteError("Invalid manager PIN");
+        setManagerPin("");
+        setDeleting(false);
+        return;
+      }
+      
+      const manager = await pinRes.json();
+      
+      // Delete (void) the transaction
+      const deleteRes = await fetch(
+        `/api/transactions/${transactionToDelete?.id}?authorizedBy=${manager.id}&reason=Deleted by admin`,
+        { method: "DELETE" }
+      );
+      
+      if (!deleteRes.ok) {
+        throw new Error("Failed to delete transaction");
+      }
+      
+      // Refresh transactions
+      await fetchTransactions();
+      setDeleteModalOpen(false);
+      setTransactionToDelete(null);
+      setManagerPin("");
+    } catch (err) {
+      console.error("Delete error:", err);
+      setDeleteError("Failed to delete transaction");
+    } finally {
+      setDeleting(false);
+    }
+  };
+  
   // Filter transactions by type for display (in case API doesn't filter)
   const filteredTransactions = typeFilter === "all" 
     ? transactions 
     : transactions.filter((t) => t?.type === typeFilter);
   
   const totals = {
-    sales: (transactions ?? []).filter((t) => t?.type === "sale").reduce((sum, t) => sum + (t?.total ?? 0), 0),
-    salesCount: (transactions ?? []).filter((t) => t?.type === "sale").length,
+    sales: (transactions ?? []).filter((t) => t?.type === "sale" && t?.status !== "deleted").reduce((sum, t) => sum + (t?.total ?? 0), 0),
+    salesCount: (transactions ?? []).filter((t) => t?.type === "sale" && t?.status !== "deleted").length,
     refunds: (transactions ?? []).filter((t) => t?.type === "refund").reduce((sum, t) => sum + Math.abs(t?.total ?? 0), 0),
     refundsCount: (transactions ?? []).filter((t) => t?.type === "refund").length,
-    voids: (transactions ?? []).filter((t) => t?.type === "void").length,
+    voids: (transactions ?? []).filter((t) => t?.type === "void" || t?.status === "deleted").length,
   };
   
-  const getTypeColor = (type: string) => {
+  const getTypeColor = (type: string, status?: string) => {
+    if (status === "deleted") return "text-gray-500";
     switch (type) {
       case "sale": return "text-green-400";
       case "refund": return "text-red-400";
@@ -208,7 +274,9 @@ export default function TransactionsPage() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: index * 0.02 }}
-                className="bg-gray-800/50 border border-gray-700 rounded-lg overflow-hidden"
+                className={`bg-gray-800/50 border rounded-lg overflow-hidden ${
+                  txn?.status === "deleted" ? "border-gray-700/50 opacity-60" : "border-gray-700"
+                }`}
               >
                 <button
                   onClick={() => setExpandedId(expandedId === txn?.id ? null : txn?.id)}
@@ -216,11 +284,12 @@ export default function TransactionsPage() {
                 >
                   <div className="flex items-center gap-4">
                     <div className={`p-2 rounded-lg ${
+                      txn?.status === "deleted" ? "bg-gray-700/50" :
                       txn?.type === "sale" ? "bg-green-600/20" :
                       txn?.type === "refund" ? "bg-red-600/20" :
                       "bg-orange-600/20"
                     }`}>
-                      <span className={getTypeColor(txn?.type)}>{getTypeIcon(txn?.type)}</span>
+                      <span className={getTypeColor(txn?.type, txn?.status)}>{getTypeIcon(txn?.type)}</span>
                     </div>
                     <div className="text-sm">
                       <p className="font-mono text-gray-400">{txn?.transactionNumber}</p>
@@ -229,15 +298,29 @@ export default function TransactionsPage() {
                     <div>
                       <p className="font-medium">{txn?.employee?.name ?? "Unknown"}</p>
                       <div className="flex items-center gap-2">
-                        <span className={`text-xs uppercase font-medium ${getTypeColor(txn?.type)}`}>
-                          {txn?.type}
+                        <span className={`text-xs uppercase font-medium ${getTypeColor(txn?.type, txn?.status)}`}>
+                          {txn?.status === "deleted" ? "VOIDED" : txn?.type}
                         </span>
                         <span className="text-sm text-gray-500 capitalize">• {txn?.paymentMethod}</span>
                       </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
+                    {txn?.status !== "deleted" && txn?.type === "sale" && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openDeleteModal(txn);
+                        }}
+                        className="text-red-400 hover:text-red-300 hover:bg-red-900/20"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
                     <span className={`text-lg font-semibold ${
+                      txn?.status === "deleted" ? "text-gray-500 line-through" :
                       txn?.type === "refund" ? "text-red-400" : 
                       txn?.type === "void" ? "text-orange-400" : ""
                     }`}>
@@ -260,6 +343,11 @@ export default function TransactionsPage() {
                       className="border-t border-gray-700"
                     >
                       <div className="p-4">
+                        {txn?.status === "deleted" && txn?.authorizedBy && (
+                          <div className="mb-4 p-3 bg-orange-900/30 border border-orange-700/50 rounded-lg text-sm">
+                            <p className="text-orange-400">Voided by: {txn.authorizedBy.name}</p>
+                          </div>
+                        )}
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="text-gray-500">
@@ -317,6 +405,82 @@ export default function TransactionsPage() {
           </div>
         )}
       </div>
+      
+      {/* Delete Transaction Modal */}
+      <Modal
+        isOpen={deleteModalOpen}
+        onClose={() => {
+          setDeleteModalOpen(false);
+          setTransactionToDelete(null);
+          setManagerPin("");
+          setDeleteError("");
+        }}
+        title="Void Transaction"
+      >
+        <div className="space-y-4">
+          <div className="p-4 bg-red-900/30 border border-red-700/50 rounded-lg">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-red-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-red-200 font-medium">This action cannot be undone</p>
+                <p className="text-red-200/70 text-sm">The transaction will be marked as voided and inventory will be restored.</p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="p-4 bg-gray-800 rounded-lg">
+            <p className="text-sm text-gray-400">Transaction</p>
+            <p className="font-mono">{transactionToDelete?.transactionNumber}</p>
+            <p className="text-lg font-bold text-green-400 mt-2">{formatCurrency(transactionToDelete?.total ?? 0)}</p>
+          </div>
+          
+          <div>
+            <p className="text-gray-400 text-sm mb-2">Enter manager PIN to authorize</p>
+            
+            <div className="flex justify-center gap-3 mb-4">
+              {[0, 1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className={`w-5 h-5 rounded-full transition-colors ${
+                    i < managerPin.length ? "bg-green-500" : "bg-gray-700"
+                  }`}
+                />
+              ))}
+            </div>
+            
+            {deleteError && (
+              <p className="text-red-400 text-sm text-center mb-4">{deleteError}</p>
+            )}
+            
+            <NumericKeypad
+              onKeyPress={(key) => managerPin.length < 4 && setManagerPin(managerPin + key)}
+              onClear={() => setManagerPin("")}
+              onBackspace={() => setManagerPin(managerPin.slice(0, -1))}
+            />
+            
+            <div className="flex gap-4 mt-4">
+              <Button
+                variant="outline"
+                className="flex-1 border-gray-600 text-gray-300"
+                onClick={() => {
+                  setDeleteModalOpen(false);
+                  setTransactionToDelete(null);
+                  setManagerPin("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 bg-red-600 hover:bg-red-700"
+                onClick={verifyAndDelete}
+                disabled={deleting || managerPin.length < 4}
+              >
+                {deleting ? <LoadingSpinner size="sm" /> : "Void Transaction"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Modal>
     </AdminLayout>
   );
 }

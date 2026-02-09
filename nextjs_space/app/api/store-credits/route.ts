@@ -15,6 +15,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Store credit not found" }, { status: 404 });
     }
     
+    // Check if already used
+    if (credit.isUsed) {
+      return NextResponse.json({ 
+        error: "Store credit already used",
+        usedAt: credit.usedAt 
+      }, { status: 400 });
+    }
+    
     return NextResponse.json(credit);
   }
   
@@ -33,14 +41,19 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { companyId, amount, transactionId } = body;
+    const { companyId, amount, transactionId, description, issuedByEmployeeId, authorizedByEmployeeId } = body;
     
     if (!companyId || !amount) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
     
     // Generate unique barcode for store credit
-    const barcode = `SC-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    // Use SC- prefix with timestamp and random chars to ensure uniqueness
+    // Format: SC-YYYYMMDD-XXXXXX (16 chars total, very unlikely to overlap with product barcodes)
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
+    const randomPart = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const barcode = `SC-${dateStr}-${randomPart}`;
     
     const credit = await prisma.storeCredit.create({
       data: {
@@ -48,6 +61,9 @@ export async function POST(request: NextRequest) {
         barcode,
         amount,
         transactionId,
+        description: description || null,
+        issuedByEmployeeId: issuedByEmployeeId || null,
+        authorizedByEmployeeId: authorizedByEmployeeId || null,
       },
     });
     

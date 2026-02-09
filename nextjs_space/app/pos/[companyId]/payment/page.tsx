@@ -12,10 +12,11 @@ import { motion, AnimatePresence } from "framer-motion";
 
 interface CartData {
   items: any[];
-  totals: { subtotal: number; tax: number; total: number };
+  totals: { subtotal: number; tax: number; total: number; storeCreditTotal?: number; grossTotal?: number };
   transactionId: string;
   employeeId: string;
   shiftId: string;
+  appliedStoreCredits?: { barcode: string; amount: number }[];
 }
 
 export default function PaymentPage() {
@@ -83,6 +84,7 @@ export default function PaymentPage() {
         shiftId: shiftId,
         paymentMethod,
         cashGiven: paymentMethod === "cash" ? cashGivenAmount : null,
+        storeCreditApplied: cartData.totals?.storeCreditTotal || 0,
         items: (cartData.items ?? []).map((item) => ({
           itemId: item?.itemId,
           itemName: item?.name,
@@ -101,6 +103,26 @@ export default function PaymentPage() {
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data?.error ?? "Failed to complete transaction");
+      }
+      
+      const txn = await res.json();
+      
+      // Redeem any applied store credits
+      if (cartData.appliedStoreCredits && cartData.appliedStoreCredits.length > 0) {
+        for (const credit of cartData.appliedStoreCredits) {
+          try {
+            await fetch("/api/store-credits/redeem", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                barcode: credit.barcode,
+                transactionId: txn.id,
+              }),
+            });
+          } catch (err) {
+            console.error("Failed to redeem store credit:", credit.barcode, err);
+          }
+        }
       }
       
       // Clear cart

@@ -17,6 +17,8 @@ import {
   Scale,
   Package,
   Search,
+  Gift,
+  X,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -29,6 +31,11 @@ interface CartItem {
   quantity: number;
   isWeightPriced: boolean;
   taxRate: number;
+}
+
+interface AppliedStoreCredit {
+  barcode: string;
+  amount: number;
 }
 
 interface SearchItem {
@@ -55,6 +62,9 @@ export default function TransactionPage() {
   const [barcode, setBarcode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  
+  // Store credit state
+  const [appliedStoreCredits, setAppliedStoreCredits] = useState<AppliedStoreCredit[]>([]);
   
   // Search dropdown for manual typing
   const [searchResults, setSearchResults] = useState<SearchItem[]>([]);
@@ -135,6 +145,13 @@ export default function TransactionPage() {
     setShowSearch(false);
     
     try {
+      // Check if this is a store credit barcode (starts with SC-)
+      if (barcodeValue.toUpperCase().startsWith("SC-")) {
+        await lookupStoreCredit(barcodeValue);
+        setBarcode("");
+        return;
+      }
+      
       const res = await fetch(
         `/api/items/barcode/${encodeURIComponent(barcodeValue)}?companyId=${companyId}`
       );
@@ -163,6 +180,51 @@ export default function TransactionPage() {
       setLoading(false);
       barcodeInputRef.current?.focus();
     }
+  };
+  
+  const lookupStoreCredit = async (creditBarcode: string) => {
+    try {
+      // Check if already applied
+      if (appliedStoreCredits.some(sc => sc.barcode.toUpperCase() === creditBarcode.toUpperCase())) {
+        setError("Store credit already applied to this transaction");
+        return;
+      }
+      
+      const res = await fetch(`/api/store-credits?barcode=${encodeURIComponent(creditBarcode)}`);
+      
+      if (!res.ok) {
+        const data = await res.json();
+        if (data.error === "Store credit already used") {
+          setError("This store credit has already been redeemed");
+        } else {
+          setError("Store credit not found");
+        }
+        return;
+      }
+      
+      const credit = await res.json();
+      
+      // Check company match
+      if (credit.companyId !== companyId) {
+        setError("This store credit is for a different store");
+        return;
+      }
+      
+      // Add to applied store credits
+      setAppliedStoreCredits(prev => [...prev, {
+        barcode: credit.barcode,
+        amount: credit.amount,
+      }]);
+      
+      setError("");
+    } catch (err) {
+      console.error("Store credit lookup error:", err);
+      setError("Failed to lookup store credit");
+    }
+  };
+  
+  const removeStoreCredit = (creditBarcode: string) => {
+    setAppliedStoreCredits(prev => prev.filter(sc => sc.barcode !== creditBarcode));
   };
   
   const addItemToCart = (item: SearchItem, quantity: number) => {
@@ -248,10 +310,16 @@ export default function TransactionPage() {
       tax += lineTotal * ((item?.taxRate ?? 0) / 100);
     });
     
+    const storeCreditTotal = appliedStoreCredits.reduce((sum, sc) => sum + sc.amount, 0);
+    const grossTotal = subtotal + tax;
+    const total = Math.max(0, grossTotal - storeCreditTotal);
+    
     return {
       subtotal: Math.round(subtotal * 100) / 100,
       tax: Math.round(tax * 100) / 100,
-      total: Math.round((subtotal + tax) * 100) / 100,
+      storeCreditTotal: Math.round(storeCreditTotal * 100) / 100,
+      grossTotal: Math.round(grossTotal * 100) / 100,
+      total: Math.round(total * 100) / 100,
     };
   };
   
@@ -272,6 +340,7 @@ export default function TransactionPage() {
         transactionId,
         employeeId: employee?.id,
         shiftId,
+        appliedStoreCredits,
       })
     );
     
@@ -569,10 +638,40 @@ export default function TransactionPage() {
                   <span className="text-gray-400">Tax</span>
                   <span>{formatCurrency(totals?.tax ?? 0)}</span>
                 </div>
+                
+                {/* Applied Store Credits */}
+                {appliedStoreCredits.length > 0 && (
+                  <div className="border-t border-pos-border pt-2 mt-2">
+                    <p className="text-xs text-yellow-400 flex items-center gap-1 mb-2">
+                      <Gift className="h-3 w-3" />
+                      Store Credits Applied
+                    </p>
+                    {appliedStoreCredits.map((sc) => (
+                      <div key={sc.barcode} className="flex justify-between items-center group">
+                        <span className="text-yellow-400 text-xs font-mono">{sc.barcode}</span>
+                        <div className="flex items-center gap-1">
+                          <span className="text-yellow-400">-{formatCurrency(sc.amount)}</span>
+                          <button
+                            onClick={() => removeStoreCredit(sc.barcode)}
+                            className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 transition-opacity"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
             
             <div className="border-t border-pos-border pt-4 mt-4">
+              {appliedStoreCredits.length > 0 && (
+                <div className="flex justify-between text-sm text-gray-400 mb-2">
+                  <span>Before Credit</span>
+                  <span>{formatCurrency(totals?.grossTotal ?? 0)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-xl font-bold">
                 <span>Total</span>
                 <span className="text-green-400">{formatCurrency(totals?.total ?? 0)}</span>

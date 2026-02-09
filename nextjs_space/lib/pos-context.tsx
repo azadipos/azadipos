@@ -16,6 +16,7 @@ interface POSContextType {
   shiftId: string | null;
   setShiftId: (id: string | null) => void;
   logout: () => void;
+  closeShift: () => void;
 }
 
 const POSContext = createContext<POSContextType | null>(null);
@@ -81,6 +82,13 @@ export function POSProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem("pos_shift_id");
   };
   
+  const closeShift = () => {
+    setShiftId(null);
+    setEmployee(null);
+    localStorage.removeItem("pos_shift_id");
+    localStorage.removeItem("pos_employee");
+  };
+  
   if (!mounted) {
     return null;
   }
@@ -95,6 +103,7 @@ export function POSProvider({ children }: { children: ReactNode }) {
         shiftId,
         setShiftId,
         logout,
+        closeShift,
       }}
     >
       {children}
