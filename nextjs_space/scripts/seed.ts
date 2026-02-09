@@ -125,35 +125,37 @@ async function main() {
 
   // Create employees
   const manager = await prisma.employee.upsert({
-    where: { companyId_pin: { companyId: company.id, pin: "1234" } },
+    where: { companyId_barcode: { companyId: company.id, barcode: "EMP-MGR01" } },
     update: {},
     create: {
       companyId: company.id,
       name: "Store Manager",
       pin: "1234",
+      barcode: "EMP-MGR01",
       isManager: true,
     },
   });
 
   const cashier = await prisma.employee.upsert({
-    where: { companyId_pin: { companyId: company.id, pin: "5678" } },
+    where: { companyId_barcode: { companyId: company.id, barcode: "EMP-CSH01" } },
     update: {},
     create: {
       companyId: company.id,
       name: "John Cashier",
       pin: "5678",
+      barcode: "EMP-CSH01",
       isManager: false,
     },
   });
 
   console.log("Created employees:");
-  console.log("  - Store Manager (PIN: 1234) - Manager");
-  console.log("  - John Cashier (PIN: 5678) - Cashier");
+  console.log("  - Store Manager (Barcode: EMP-MGR01) - Manager");
+  console.log("  - John Cashier (Barcode: EMP-CSH01) - Cashier");
 
   console.log("\nSeed completed successfully!");
-  console.log("\nDemo Store login PINs:");
-  console.log("  Manager: 1234");
-  console.log("  Cashier: 5678");
+  console.log("\nDemo Store login Barcodes:");
+  console.log("  Manager: EMP-MGR01");
+  console.log("  Cashier: EMP-CSH01");
 }
 
 main()

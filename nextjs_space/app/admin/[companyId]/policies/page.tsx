@@ -391,8 +391,8 @@ export default function PoliciesPage() {
               items={allItems.filter(
                 (i) => !itemsWithCustomPolicy.some((p) => p.id === i.id)
               )}
-              value={selectedItem}
-              onChange={(item) => setSelectedItem(item)}
+              selectedId={selectedItem?.id}
+              onSelect={(id) => setSelectedItem(allItems.find(i => i.id === id) || null)}
               placeholder="Search by name or barcode..."
             />
           </div>
