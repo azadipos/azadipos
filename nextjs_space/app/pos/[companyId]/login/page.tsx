@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { NumericKeypad } from "@/components/numeric-keypad";
+import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { usePOS } from "@/lib/pos-context";
-import { User, Lock, ArrowLeft } from "lucide-react";
+import { User, Barcode, ArrowLeft, ScanLine } from "lucide-react";
 import { motion } from "framer-motion";
 
 export default function POSLoginPage() {
@@ -15,34 +15,39 @@ export default function POSLoginPage() {
   const companyId = params?.companyId as string;
   const { setCompanyId, setEmployee, setShiftId } = usePOS();
   
-  const [pin, setPin] = useState("");
+  const [barcode, setBarcode] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [lastInputTime, setLastInputTime] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
   
   useEffect(() => {
     setCompanyId(companyId);
   }, [companyId, setCompanyId]);
   
-  const handleKeyPress = (key: string) => {
-    if (pin.length < 6) {
-      setPin(pin + key);
-      setError("");
+  // Auto-focus barcode input
+  useEffect(() => {
+    if (inputRef.current && !loading) {
+      inputRef.current.focus();
     }
-  };
+  }, [loading]);
   
-  const handleClear = () => {
-    setPin("");
-    setError("");
-  };
+  // Refocus on click anywhere
+  useEffect(() => {
+    const handleClick = () => {
+      if (inputRef.current && !loading) {
+        inputRef.current.focus();
+      }
+    };
+    document.addEventListener("click", handleClick);
+    return () => document.removeEventListener("click", handleClick);
+  }, [loading]);
   
-  const handleBackspace = () => {
-    setPin(pin.slice(0, -1));
-    setError("");
-  };
-  
-  const handleLogin = async () => {
-    if (pin.length < 4) {
-      setError("PIN must be at least 4 digits");
+  const handleLogin = async (scannedBarcode?: string) => {
+    const barcodeToUse = scannedBarcode || barcode;
+    
+    if (!barcodeToUse.trim()) {
+      setError("Please scan your employee barcode");
       return;
     }
     
@@ -53,12 +58,12 @@ export default function POSLoginPage() {
       const res = await fetch("/api/employees/verify-pin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ companyId, pin }),
+        body: JSON.stringify({ companyId, barcode: barcodeToUse }),
       });
       
       if (!res.ok) {
-        setError("Invalid PIN");
-        setPin("");
+        setError("Invalid employee barcode");
+        setBarcode("");
         return;
       }
       
@@ -86,6 +91,41 @@ export default function POSLoginPage() {
     }
   };
   
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    const now = Date.now();
+    
+    setBarcode(value);
+    setError("");
+    
+    // Detect fast input (scanner) vs manual typing
+    // If multiple characters entered quickly, it's likely a scanner
+    if (value.length > barcode.length + 1 || (now - lastInputTime < 50 && value.length > 5)) {
+      // Auto-submit on scanner input
+      if (value.startsWith("EMP-") && value.length >= 9) {
+        setTimeout(() => handleLogin(value), 100);
+      }
+    }
+    
+    setLastInputTime(now);
+  };
+  
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && barcode.trim()) {
+      handleLogin();
+    }
+  };
+  
+  // Handle paste (scanner often pastes)
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const pastedText = e.clipboardData.getData("text").trim();
+    if (pastedText.startsWith("EMP-")) {
+      e.preventDefault();
+      setBarcode(pastedText);
+      setTimeout(() => handleLogin(pastedText), 100);
+    }
+  };
+  
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4">
       <Button
@@ -106,41 +146,63 @@ export default function POSLoginPage() {
           <User className="h-10 w-10 text-green-400" />
         </div>
         <h1 className="text-2xl font-bold">Employee Login</h1>
-        <p className="text-gray-400 mt-2">Enter your PIN to clock in</p>
+        <p className="text-gray-400 mt-2">Scan your employee barcode to clock in</p>
       </motion.div>
       
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
-        className="w-full max-w-xs"
+        className="w-full max-w-md"
       >
         <div className="mb-6">
-          <div className="flex items-center justify-center gap-2 p-4 bg-pos-card border border-pos-border rounded-lg">
-            <Lock className="h-5 w-5 text-gray-500" />
-            <div className="flex gap-3">
-              {[0, 1, 2, 3].map((i) => (
-                <div
-                  key={i}
-                  className={`w-5 h-5 rounded-full transition-colors ${
-                    i < pin.length ? "bg-green-500" : "bg-gray-700"
-                  }`}
-                />
-              ))}
+          <div className="relative">
+            <div className="p-8 bg-pos-card border-2 border-dashed border-pos-border rounded-xl flex flex-col items-center gap-4">
+              <motion.div
+                animate={{ opacity: [0.5, 1, 0.5] }}
+                transition={{ duration: 2, repeat: Infinity }}
+                className="text-green-400"
+              >
+                <ScanLine className="h-16 w-16" />
+              </motion.div>
+              <p className="text-gray-400 text-sm">Waiting for barcode scan...</p>
+              
+              <Input
+                ref={inputRef}
+                value={barcode}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
+                placeholder="Scan or enter employee barcode"
+                className="bg-gray-800 border-gray-600 text-white text-center font-mono text-lg tracking-wider"
+                autoComplete="off"
+              />
+              
+              {barcode && (
+                <div className="flex items-center gap-2 text-green-400">
+                  <Barcode className="h-5 w-5" />
+                  <span className="font-mono">{barcode}</span>
+                </div>
+              )}
             </div>
           </div>
+          
           {error && (
-            <p className="text-red-400 text-center text-sm mt-2">{error}</p>
+            <p className="text-red-400 text-center text-sm mt-4">{error}</p>
           )}
         </div>
         
-        <NumericKeypad
-          onKeyPress={handleKeyPress}
-          onClear={handleClear}
-          onBackspace={handleBackspace}
-          onSubmit={handleLogin}
-          submitLabel={loading ? "..." : "Login"}
-        />
+        <Button
+          onClick={() => handleLogin()}
+          disabled={loading || !barcode.trim()}
+          className="w-full h-14 text-lg bg-green-600 hover:bg-green-700 disabled:bg-gray-700"
+        >
+          {loading ? <LoadingSpinner size="sm" /> : "Clock In"}
+        </Button>
+        
+        <p className="text-center text-gray-500 text-xs mt-4">
+          Don&apos;t have your barcode? Contact a manager to print a new one.
+        </p>
       </motion.div>
     </div>
   );

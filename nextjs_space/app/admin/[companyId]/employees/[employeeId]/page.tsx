@@ -23,16 +23,45 @@ import {
   ChevronRight,
   Camera,
   Ban,
+  Tag,
+  Filter,
+  Barcode,
 } from "lucide-react";
 import { motion } from "framer-motion";
 
 interface Employee {
   id: string;
   name: string;
-  pin: string;
+  barcode: string | null;
   isManager: boolean;
   isActive: boolean;
   createdAt: string;
+}
+
+interface Category {
+  id: string;
+  name: string;
+}
+
+interface CategorySalesData {
+  employeeCategorySales: number;
+  employeeCategoryTransactions: number;
+  flaggedTransactions: Array<{
+    id: string;
+    transactionNumber: string;
+    total: number;
+    categoryTotal: number;
+    date: string;
+  }>;
+  teamComparison: Array<{
+    id: string;
+    name: string;
+    isManager: boolean;
+    isCurrentEmployee: boolean;
+    categorySales: number;
+    categoryItemCount: number;
+  }>;
+  teamAverage: number;
 }
 
 interface Shift {
@@ -125,8 +154,16 @@ export default function EmployeeStatsPage() {
   // Comparison modal
   const [comparisonModalOpen, setComparisonModalOpen] = useState(false);
   
+  // Category sales tracking
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string>("");
+  const [categorySalesData, setCategorySalesData] = useState<CategorySalesData | null>(null);
+  const [categorySalesLoading, setCategorySalesLoading] = useState(false);
+  const [categorySalesModalOpen, setCategorySalesModalOpen] = useState(false);
+  
   useEffect(() => {
     fetchEmployeeData();
+    fetchCategories();
   }, [companyId, employeeId]);
   
   const fetchEmployeeData = async () => {
@@ -146,6 +183,43 @@ export default function EmployeeStatsPage() {
       console.error("Failed to fetch employee data:", err);
     } finally {
       setLoading(false);
+    }
+  };
+  
+  const fetchCategories = async () => {
+    try {
+      const res = await fetch(`/api/categories?companyId=${companyId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setCategories(data || []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch categories:", err);
+    }
+  };
+  
+  const fetchCategorySales = async (categoryId: string) => {
+    setCategorySalesLoading(true);
+    try {
+      const res = await fetch(
+        `/api/employees/${employeeId}/category-sales?companyId=${companyId}&categoryId=${categoryId}`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setCategorySalesData(data);
+        setCategorySalesModalOpen(true);
+      }
+    } catch (err) {
+      console.error("Failed to fetch category sales:", err);
+    } finally {
+      setCategorySalesLoading(false);
+    }
+  };
+  
+  const handleCategorySelect = (categoryId: string) => {
+    setSelectedCategory(categoryId);
+    if (categoryId) {
+      fetchCategorySales(categoryId);
     }
   };
   
@@ -208,9 +282,12 @@ export default function EmployeeStatsPage() {
           </Button>
           <div className="flex-1">
             <h1 className="text-2xl font-bold">{employee.name}</h1>
-            <p className="text-gray-400">
-              {employee.isManager ? "Manager" : "Cashier"} • PIN: {employee.pin}
-            </p>
+            <div className="flex items-center gap-2 text-gray-400">
+              <span>{employee.isManager ? "Manager" : "Cashier"}</span>
+              <span>•</span>
+              <Barcode className="h-4 w-4" />
+              <span className="font-mono text-green-400">{employee.barcode || "No barcode"}</span>
+            </div>
           </div>
           <Button onClick={() => setComparisonModalOpen(true)} variant="outline">
             <TrendingUp className="h-4 w-4 mr-2" />
@@ -339,6 +416,50 @@ export default function EmployeeStatsPage() {
             </p>
           </div>
         )}
+        
+        {/* Category Sales Tracking */}
+        <div className="p-4 bg-gray-800/50 border border-gray-700 rounded-lg">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="font-semibold flex items-center gap-2">
+                <Filter className="h-5 w-5 text-orange-400" />
+                Category Sales Analysis
+              </h3>
+              <p className="text-sm text-gray-500 mt-1">
+                Flag transactions containing specific categories for fraud detection
+              </p>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            <select
+              value={selectedCategory}
+              onChange={(e) => handleCategorySelect(e.target.value)}
+              className="flex-1 h-10 px-3 bg-gray-800 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+            >
+              <option value="">Select a category...</option>
+              {categories.map((cat) => (
+                <option key={cat.id} value={cat.id}>
+                  {cat.name}
+                </option>
+              ))}
+            </select>
+            <Button
+              onClick={() => selectedCategory && fetchCategorySales(selectedCategory)}
+              disabled={!selectedCategory || categorySalesLoading}
+              className="bg-orange-600 hover:bg-orange-700"
+            >
+              {categorySalesLoading ? <LoadingSpinner size="sm" /> : "Analyze"}
+            </Button>
+          </div>
+          
+          <div className="mt-3 text-xs text-gray-500">
+            <p>
+              <strong>Common use cases:</strong> Gift cards (fraud), Tobacco (age-restricted), 
+              High-value items (theft), Electronics, etc.
+            </p>
+          </div>
+        </div>
         
         {/* Shift History - Clickable */}
         <div>
@@ -622,6 +743,141 @@ export default function EmployeeStatsPage() {
             <p className="mt-2">Employees highlighted in <span className="text-red-400">red</span> or <span className="text-yellow-400">yellow</span> are 50%+ above average.</p>
           </div>
         </div>
+      </Modal>
+      
+      {/* Category Sales Modal */}
+      <Modal
+        isOpen={categorySalesModalOpen}
+        onClose={() => setCategorySalesModalOpen(false)}
+        title={`Category Sales Analysis: ${categories.find((c) => c.id === selectedCategory)?.name || ""}`}
+      >
+        {categorySalesLoading ? (
+          <div className="flex justify-center py-12">
+            <LoadingSpinner size="lg" />
+          </div>
+        ) : categorySalesData ? (
+          <div className="space-y-6 max-h-[70vh] overflow-y-auto pr-2">
+            {/* Summary */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="p-4 bg-orange-900/20 rounded-lg text-center">
+                <p className="text-2xl font-bold text-orange-400">
+                  {formatCurrency(categorySalesData.employeeCategorySales)}
+                </p>
+                <p className="text-xs text-gray-400">Category Sales</p>
+              </div>
+              <div className="p-4 bg-orange-900/20 rounded-lg text-center">
+                <p className="text-2xl font-bold text-orange-400">
+                  {categorySalesData.employeeCategoryTransactions}
+                </p>
+                <p className="text-xs text-gray-400">Transactions with Category</p>
+              </div>
+            </div>
+            
+            {/* Team Comparison */}
+            {categorySalesData.teamComparison.length > 0 && (
+              <div>
+                <h4 className="font-medium mb-2 flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4" />
+                  Team Comparison
+                </h4>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-700">
+                        <th className="text-left p-2">Employee</th>
+                        <th className="text-right p-2">Category Sales</th>
+                        <th className="text-right p-2">Items Sold</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {categorySalesData.teamComparison.map((emp) => (
+                        <tr 
+                          key={emp.id}
+                          className={`border-b border-gray-800 ${
+                            emp.isCurrentEmployee ? "bg-blue-900/20" : ""
+                          }`}
+                        >
+                          <td className="p-2">
+                            <div className="flex items-center gap-2">
+                              {emp.isCurrentEmployee && (
+                                <span className="w-2 h-2 bg-blue-500 rounded-full" />
+                              )}
+                              <span>{emp.name}</span>
+                              {emp.isManager && (
+                                <Shield className="h-3 w-3 text-purple-400" />
+                              )}
+                            </div>
+                          </td>
+                          <td className="text-right p-2 font-mono">
+                            {formatCurrency(emp.categorySales)}
+                          </td>
+                          <td className="text-right p-2">
+                            {emp.categoryItemCount}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-gray-800/50">
+                        <td className="p-2 font-medium">Team Average</td>
+                        <td className="text-right p-2 text-gray-400">
+                          {formatCurrency(categorySalesData.teamAverage)}
+                        </td>
+                        <td className="p-2"></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+                
+                {/* Anomaly Detection */}
+                {categorySalesData.employeeCategorySales > categorySalesData.teamAverage * 1.5 && (
+                  <div className="mt-3 p-3 bg-red-900/30 border border-red-700/50 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 text-red-400" />
+                      <span className="text-sm text-red-300">
+                        This employee&apos;s category sales are 50%+ above team average
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {/* Flagged Transactions */}
+            {categorySalesData.flaggedTransactions.length > 0 && (
+              <div>
+                <h4 className="font-medium mb-2 flex items-center gap-2">
+                  <Tag className="h-4 w-4" />
+                  Transactions Containing Category ({categorySalesData.flaggedTransactions.length})
+                </h4>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {categorySalesData.flaggedTransactions.map((txn) => (
+                    <div 
+                      key={txn.id}
+                      className="p-2 bg-gray-800 rounded-lg text-sm flex items-center justify-between"
+                    >
+                      <div>
+                        <p className="font-mono text-xs text-gray-400">{txn.transactionNumber}</p>
+                        <p className="text-xs text-gray-500">
+                          {new Date(txn.date).toLocaleString()}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-orange-400 font-medium">
+                          {formatCurrency(txn.categoryTotal)}
+                          <span className="text-gray-500 text-xs ml-1">in category</span>
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          Total: {formatCurrency(txn.total)}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : null}
       </Modal>
     </AdminLayout>
   );

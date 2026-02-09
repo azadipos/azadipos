@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { AdminLayout } from "@/components/admin-layout";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/loading-spinner";
-import { Package, Users, Receipt, Tags, Truck, TrendingUp, Gift, ClipboardList, DollarSign, BarChart3, AlertTriangle } from "lucide-react";
+import { Package, Users, Receipt, Tags, Truck, TrendingUp, Gift, ClipboardList, DollarSign, BarChart3, AlertTriangle, ShieldCheck } from "lucide-react";
 import { motion } from "framer-motion";
 
 interface Company {
@@ -126,6 +126,13 @@ export default function CompanyDashboard() {
       href: `/admin/${companyId}/reports`,
       color: "bg-emerald-600/20 text-emerald-400",
       description: "Analytics & breakdown",
+    },
+    {
+      label: "Policies",
+      icon: ShieldCheck,
+      href: `/admin/${companyId}/policies`,
+      color: "bg-slate-600/20 text-slate-400",
+      description: "Return rules & limits",
     },
   ];
   

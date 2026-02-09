@@ -44,19 +44,26 @@ export async function GET(
       _count: true,
     });
     
-    // Count store credits - since we don't have employeeId on StoreCredit,
-    // we'll count from refund transactions that generated store credits
-    // For now, return 0 until schema is updated to track issuer
+    // Count store credits issued by this employee
+    const storeCreditAgg = await prisma.storeCredit.aggregate({
+      where: {
+        issuedByEmployeeId: employeeId,
+      },
+      _sum: {
+        amount: true,
+      },
+      _count: true,
+    });
     
     return NextResponse.json({
       totalSales: salesAgg._sum.total ?? 0,
       totalRefunds: refundAgg._sum.total ?? 0,
       totalVoids: voidAgg._sum.total ?? 0,
-      totalStoreCredits: 0, // Need schema update to track issuer
+      totalStoreCredits: storeCreditAgg._sum.amount ?? 0,
       transactionCount: salesAgg._count ?? 0,
       refundCount: refundAgg._count ?? 0,
       voidCount: voidAgg._count ?? 0,
-      storeCreditCount: 0, // Need schema update to track issuer
+      storeCreditCount: storeCreditAgg._count ?? 0,
     });
   } catch (error) {
     console.error("Employee stats error:", error);

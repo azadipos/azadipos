@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,9 @@ import {
   Banknote,
   Gift,
   FileQuestion,
+  ScanLine,
+  Ban,
+  Clock,
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -33,6 +36,7 @@ interface Transaction {
   createdAt: string;
   items: {
     id: string;
+    itemId: string;
     itemName: string;
     quantity: number;
     unitPrice: number;
@@ -43,12 +47,15 @@ interface Transaction {
 
 interface RefundItem {
   id: string;
+  itemId: string;
   itemName: string;
   quantity: number;
   unitPrice: number;
   lineTotal: number;
   isWeightItem: boolean;
   refundQty: number;
+  policyError?: string;
+  canReturn: boolean;
 }
 
 export default function RefundPage() {
@@ -65,12 +72,14 @@ export default function RefundPage() {
   const [refundItems, setRefundItems] = useState<RefundItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [policyWarning, setPolicyWarning] = useState("");
   const [step, setStep] = useState<"search" | "select" | "method" | "amount" | "complete">("search");
   
   const [refundMethod, setRefundMethod] = useState<"original" | "cash" | "store_credit">("original");
-  const [managerPinModal, setManagerPinModal] = useState(false);
-  const [managerPin, setManagerPin] = useState("");
+  const [managerBarcodeModal, setManagerBarcodeModal] = useState(false);
+  const [managerBarcode, setManagerBarcode] = useState("");
   const [authorizedManagerId, setAuthorizedManagerId] = useState<string | null>(null);
+  const managerBarcodeRef = useRef<HTMLInputElement>(null);
   
   // No-receipt store credit amount
   const [noReceiptAmount, setNoReceiptAmount] = useState("");
@@ -78,20 +87,31 @@ export default function RefundPage() {
   
   const [storeCreditBarcode, setStoreCreditBarcode] = useState("");
   
+  // Transaction input ref for barcode scanning
+  const transactionInputRef = useRef<HTMLInputElement>(null);
+  
   useEffect(() => {
     if (!employee) {
       router.push(`/pos/${companyId}/login`);
     }
   }, [employee, companyId, router]);
   
+  // Auto-focus manager barcode input when modal opens
+  useEffect(() => {
+    if (managerBarcodeModal && managerBarcodeRef.current) {
+      managerBarcodeRef.current.focus();
+    }
+  }, [managerBarcodeModal]);
+  
   const searchTransaction = async () => {
     if (!transactionId.trim()) {
-      setError("Enter a transaction ID");
+      setError("Enter a transaction ID or scan receipt");
       return;
     }
     
     setLoading(true);
     setError("");
+    setPolicyWarning("");
     
     try {
       const res = await fetch(`/api/transactions/search?companyId=${companyId}&transactionNumber=${encodeURIComponent(transactionId)}`);
@@ -103,29 +123,62 @@ export default function RefundPage() {
       
       const txn = await res.json();
       
-      // Check if already refunded
-      if (txn.type === "refund" || txn.status === "refunded") {
-        setError("This transaction has already been refunded");
+      // Validate transaction against policy
+      const policyRes = await fetch("/api/policies/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyId, transactionId: txn.id }),
+      });
+      
+      const policyResult = await policyRes.json();
+      
+      if (!policyResult.allowed) {
+        setError(policyResult.reason);
         return;
       }
       
-      // Check return period (would need category info)
-      const txnDate = new Date(txn.createdAt);
-      const daysSince = Math.floor((Date.now() - txnDate.getTime()) / (1000 * 60 * 60 * 24));
-      
-      // Default 30 day return period
-      if (daysSince > 30) {
-        setError("Transaction is outside the return period");
-        return;
+      // Show warning if close to return period limit
+      if (policyResult.daysSincePurchase > policyResult.maxDays * 0.8) {
+        setPolicyWarning(
+          `This transaction is ${policyResult.daysSincePurchase} days old (${policyResult.maxDays} day limit)`
+        );
       }
       
       setTransaction(txn);
-      setRefundItems(
-        txn.items.map((item: any) => ({
-          ...item,
-          refundQty: item.quantity,
-        }))
+      
+      // Validate each item's return policy
+      const itemsWithPolicy = await Promise.all(
+        txn.items.map(async (item: any) => {
+          const itemPolicyRes = await fetch("/api/policies/validate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ companyId, itemId: item.itemId }),
+          });
+          
+          const itemPolicy = await itemPolicyRes.json();
+          
+          // Check if item-specific return period is exceeded
+          let canReturn = itemPolicy.allowed;
+          let policyError = "";
+          
+          if (itemPolicy.isNonReturnable) {
+            canReturn = false;
+            policyError = "Non-returnable item";
+          } else if (itemPolicy.effectiveReturnPeriod && policyResult.daysSincePurchase > itemPolicy.effectiveReturnPeriod) {
+            canReturn = false;
+            policyError = `Return period exceeded (${itemPolicy.effectiveReturnPeriod} days)`;
+          }
+          
+          return {
+            ...item,
+            refundQty: canReturn ? item.quantity : 0,
+            canReturn,
+            policyError,
+          };
+        })
       );
+      
+      setRefundItems(itemsWithPolicy);
       setStep("select");
     } catch (err) {
       console.error("Search error:", err);
@@ -138,7 +191,7 @@ export default function RefundPage() {
   const updateRefundQty = (itemId: string, qty: number) => {
     setRefundItems((prev) =>
       prev.map((item) => {
-        if (item.id === itemId) {
+        if (item.id === itemId && item.canReturn) {
           const maxQty = transaction?.items.find((i) => i.id === itemId)?.quantity || item.quantity;
           return { ...item, refundQty: Math.max(0, Math.min(qty, maxQty)) };
         }
@@ -172,46 +225,69 @@ export default function RefundPage() {
       setError("Select items to refund");
       return;
     }
-    
-    // For store credit, require manager PIN
-    setManagerPinModal(true);
+    // Manager authorization required
+    setManagerBarcodeModal(true);
   };
   
   const proceedNoReceiptAmount = () => {
     // Manager authorization required for no-receipt refunds
-    setManagerPinModal(true);
+    setManagerBarcodeModal(true);
   };
   
-  const verifyManagerPin = async () => {
-    if (managerPin.length < 4) return;
+  const verifyManagerBarcode = async () => {
+    if (!managerBarcode.trim()) return;
     
     try {
       const res = await fetch("/api/employees/verify-pin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ companyId, pin: managerPin, requireManager: true }),
+        body: JSON.stringify({ companyId, barcode: managerBarcode }),
       });
       
       if (!res.ok) {
-        setError("Invalid manager PIN");
-        setManagerPin("");
+        setError("Invalid manager barcode");
+        setManagerBarcode("");
         return;
       }
       
       const manager = await res.json();
+      
+      if (!manager.isManager) {
+        setError("Manager authorization required");
+        setManagerBarcode("");
+        return;
+      }
+      
       setAuthorizedManagerId(manager.id);
-      setManagerPinModal(false);
-      setManagerPin("");
+      setManagerBarcodeModal(false);
+      setManagerBarcode("");
+      setError("");
       
       if (mode === "no_receipt") {
-        // Process no-receipt store credit
         processNoReceiptCredit(manager.id);
       } else {
         setStep("method");
       }
     } catch (err) {
-      console.error("PIN verification error:", err);
-      setError("Failed to verify PIN");
+      console.error("Barcode verification error:", err);
+      setError("Failed to verify barcode");
+    }
+  };
+  
+  const handleManagerBarcodeInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setManagerBarcode(value);
+    setError("");
+    
+    // Auto-submit on EMP- barcode pattern
+    if (value.startsWith("EMP-") && value.length >= 9) {
+      setTimeout(() => verifyManagerBarcode(), 100);
+    }
+  };
+  
+  const handleManagerBarcodeKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && managerBarcode.trim()) {
+      verifyManagerBarcode();
     }
   };
   
@@ -226,7 +302,6 @@ export default function RefundPage() {
     setError("");
     
     try {
-      // Create store credit without linked transaction
       const creditRes = await fetch("/api/store-credits", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -261,7 +336,6 @@ export default function RefundPage() {
     setError("");
     
     try {
-      // Create refund transaction
       const refundTxnRes = await fetch(`/api/companies/${companyId}/transactions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -278,7 +352,7 @@ export default function RefundPage() {
           items: refundItems
             .filter((item) => item.refundQty > 0)
             .map((item) => ({
-              itemId: item.id.split("-")[0], // Extract actual item ID
+              itemId: item.itemId,
               itemName: item.itemName,
               quantity: -item.refundQty,
               unitPrice: item.unitPrice,
@@ -294,7 +368,6 @@ export default function RefundPage() {
       
       const refundTxn = await refundTxnRes.json();
       
-      // If store credit, generate the credit
       if (refundMethod === "store_credit") {
         const creditRes = await fetch("/api/store-credits", {
           method: "POST",
@@ -314,7 +387,6 @@ export default function RefundPage() {
         }
       }
       
-      // Mark original transaction as refunded
       await fetch(`/api/transactions/${transaction.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -372,7 +444,7 @@ export default function RefundPage() {
               </div>
               <div className="text-left">
                 <p className="text-lg font-medium">With Receipt</p>
-                <p className="text-sm text-gray-400">Lookup transaction and choose refund method</p>
+                <p className="text-sm text-gray-400">Scan receipt barcode or enter transaction ID</p>
               </div>
             </button>
             
@@ -388,7 +460,7 @@ export default function RefundPage() {
               </div>
               <div className="text-left">
                 <p className="text-lg font-medium">No Receipt</p>
-                <p className="text-sm text-gray-400">Issue store credit only (requires manager approval)</p>
+                <p className="text-sm text-gray-400">Issue store credit only (requires manager scan)</p>
               </div>
             </button>
           </div>
@@ -426,7 +498,7 @@ export default function RefundPage() {
             <AlertCircle className="h-5 w-5 text-yellow-500 flex-shrink-0 mt-0.5" />
             <div>
               <p className="text-yellow-200 font-medium">Store Credit Only</p>
-              <p className="text-yellow-200/70 text-sm">Without a receipt, only store credit can be issued. Manager authorization is required.</p>
+              <p className="text-yellow-200/70 text-sm">Without a receipt, only store credit can be issued. Manager barcode scan is required.</p>
             </div>
           </div>
         </div>
@@ -476,39 +548,50 @@ export default function RefundPage() {
           </div>
         </motion.div>
         
-        {/* Manager PIN Modal */}
+        {/* Manager Barcode Modal */}
         <Modal
-          isOpen={managerPinModal}
+          isOpen={managerBarcodeModal}
           onClose={() => {
-            setManagerPinModal(false);
-            setManagerPin("");
+            setManagerBarcodeModal(false);
+            setManagerBarcode("");
+            setError("");
           }}
           title="Manager Authorization Required"
         >
           <div className="text-center">
-            <p className="text-gray-400 mb-2">Enter manager PIN to authorize</p>
+            <p className="text-gray-400 mb-2">Scan manager barcode to authorize</p>
             <p className="text-yellow-400 font-semibold mb-4">
               No-receipt store credit: {formatCurrency(parseFloat(noReceiptAmount) || 0)}
             </p>
             
-            <div className="flex justify-center gap-3 mb-4">
-              {[0, 1, 2, 3].map((i) => (
-                <div
-                  key={i}
-                  className={`w-5 h-5 rounded-full transition-colors ${
-                    i < managerPin.length ? "bg-green-500" : "bg-gray-700"
-                  }`}
-                />
-              ))}
+            <div className="p-6 bg-gray-900/50 rounded-lg border border-dashed border-gray-700 mb-4">
+              <motion.div
+                animate={{ opacity: [0.5, 1, 0.5] }}
+                transition={{ duration: 2, repeat: Infinity }}
+                className="text-green-400 mb-3"
+              >
+                <ScanLine className="h-12 w-12 mx-auto" />
+              </motion.div>
+              <Input
+                ref={managerBarcodeRef}
+                value={managerBarcode}
+                onChange={handleManagerBarcodeInput}
+                onKeyDown={handleManagerBarcodeKeyDown}
+                placeholder="Scan manager barcode"
+                className="bg-gray-800 border-gray-600 text-white text-center font-mono"
+                autoComplete="off"
+              />
             </div>
             
-            <NumericKeypad
-              onKeyPress={(key) => managerPin.length < 4 && setManagerPin(managerPin + key)}
-              onClear={() => setManagerPin("")}
-              onBackspace={() => setManagerPin(managerPin.slice(0, -1))}
-              onSubmit={verifyManagerPin}
-              submitLabel="Authorize"
-            />
+            {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
+            
+            <Button
+              onClick={verifyManagerBarcode}
+              disabled={!managerBarcode.trim()}
+              className="w-full bg-green-600 hover:bg-green-700"
+            >
+              Authorize
+            </Button>
           </div>
         </Modal>
       </div>
@@ -543,6 +626,13 @@ export default function RefundPage() {
         </div>
       )}
       
+      {policyWarning && (
+        <div className="mb-4 p-3 bg-yellow-900/50 border border-yellow-700 rounded-lg flex items-center gap-2">
+          <Clock className="h-5 w-5 text-yellow-400" />
+          <span className="text-yellow-200">{policyWarning}</span>
+        </div>
+      )}
+      
       {/* Step 1: Search */}
       {step === "search" && (
         <motion.div
@@ -553,16 +643,18 @@ export default function RefundPage() {
           <Search className="h-16 w-16 text-gray-600 mb-4" />
           <h2 className="text-xl font-semibold mb-2">Find Transaction</h2>
           <p className="text-gray-400 text-center mb-6">
-            Enter the transaction ID from the customer's receipt
+            Scan the receipt barcode or enter transaction ID
           </p>
           
           <div className="w-full space-y-4">
             <Input
+              ref={transactionInputRef}
               value={transactionId}
               onChange={(e) => setTransactionId(e.target.value)}
-              placeholder="Transaction ID (e.g., TXN-20250207-123456)"
+              placeholder="Scan receipt or enter ID"
               className="h-14 text-lg"
               onKeyDown={(e) => e.key === "Enter" && searchTransaction()}
+              autoFocus
             />
             
             <Button
@@ -597,32 +689,46 @@ export default function RefundPage() {
               {refundItems.map((item) => (
                 <div
                   key={item.id}
-                  className="p-4 bg-pos-card border border-pos-border rounded-lg"
+                  className={`p-4 bg-pos-card border rounded-lg ${
+                    item.canReturn ? "border-pos-border" : "border-red-800/50 bg-red-900/20"
+                  }`}
                 >
                   <div className="flex items-center gap-4">
                     <div className="flex-1">
-                      <p className="font-medium">{item.itemName}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium">{item.itemName}</p>
+                        {!item.canReturn && (
+                          <span className="text-xs bg-red-600/30 text-red-400 px-2 py-0.5 rounded flex items-center gap-1">
+                            <Ban className="h-3 w-3" />
+                            {item.policyError}
+                          </span>
+                        )}
+                      </div>
                       <p className="text-sm text-gray-500">
                         {formatCurrency(item.unitPrice)} × {item.quantity}
                         {item.isWeightItem ? " lb" : ""}
                       </p>
                     </div>
                     
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-400">Refund Qty:</span>
-                      <Input
-                        type="number"
-                        min="0"
-                        max={item.quantity}
-                        step={item.isWeightItem ? "0.01" : "1"}
-                        value={item.refundQty}
-                        onChange={(e) => updateRefundQty(item.id, parseFloat(e.target.value) || 0)}
-                        className="w-20 text-center"
-                      />
-                    </div>
+                    {item.canReturn ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-400">Refund Qty:</span>
+                        <Input
+                          type="number"
+                          min="0"
+                          max={item.quantity}
+                          step={item.isWeightItem ? "0.01" : "1"}
+                          value={item.refundQty}
+                          onChange={(e) => updateRefundQty(item.id, parseFloat(e.target.value) || 0)}
+                          className="w-20 text-center"
+                        />
+                      </div>
+                    ) : (
+                      <span className="text-gray-600 text-sm">Not returnable</span>
+                    )}
                     
                     <div className="w-24 text-right">
-                      <p className="font-semibold text-red-400">
+                      <p className={`font-semibold ${item.canReturn ? "text-red-400" : "text-gray-600"}`}>
                         -{formatCurrency(item.unitPrice * item.refundQty)}
                       </p>
                     </div>
@@ -779,36 +885,47 @@ export default function RefundPage() {
         </motion.div>
       )}
       
-      {/* Manager PIN Modal */}
+      {/* Manager Barcode Modal */}
       <Modal
-        isOpen={managerPinModal}
+        isOpen={managerBarcodeModal}
         onClose={() => {
-          setManagerPinModal(false);
-          setManagerPin("");
+          setManagerBarcodeModal(false);
+          setManagerBarcode("");
+          setError("");
         }}
         title="Manager Authorization Required"
       >
         <div className="text-center">
-          <p className="text-gray-400 mb-4">Enter manager PIN to authorize refund</p>
+          <p className="text-gray-400 mb-4">Scan manager barcode to authorize refund</p>
           
-          <div className="flex justify-center gap-3 mb-4">
-            {[0, 1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className={`w-5 h-5 rounded-full transition-colors ${
-                  i < managerPin.length ? "bg-green-500" : "bg-gray-700"
-                }`}
-              />
-            ))}
+          <div className="p-6 bg-gray-900/50 rounded-lg border border-dashed border-gray-700 mb-4">
+            <motion.div
+              animate={{ opacity: [0.5, 1, 0.5] }}
+              transition={{ duration: 2, repeat: Infinity }}
+              className="text-green-400 mb-3"
+            >
+              <ScanLine className="h-12 w-12 mx-auto" />
+            </motion.div>
+            <Input
+              ref={managerBarcodeRef}
+              value={managerBarcode}
+              onChange={handleManagerBarcodeInput}
+              onKeyDown={handleManagerBarcodeKeyDown}
+              placeholder="Scan manager barcode"
+              className="bg-gray-800 border-gray-600 text-white text-center font-mono"
+              autoComplete="off"
+            />
           </div>
           
-          <NumericKeypad
-            onKeyPress={(key) => managerPin.length < 4 && setManagerPin(managerPin + key)}
-            onClear={() => setManagerPin("")}
-            onBackspace={() => setManagerPin(managerPin.slice(0, -1))}
-            onSubmit={verifyManagerPin}
-            submitLabel="Authorize"
-          />
+          {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
+          
+          <Button
+            onClick={verifyManagerBarcode}
+            disabled={!managerBarcode.trim()}
+            className="w-full bg-green-600 hover:bg-green-700"
+          >
+            Authorize
+          </Button>
         </div>
       </Modal>
     </div>

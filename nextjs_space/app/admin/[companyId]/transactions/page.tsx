@@ -1,14 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import { AdminLayout } from "@/components/admin-layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/modal";
-import { NumericKeypad } from "@/components/numeric-keypad";
 import { LoadingSpinner } from "@/components/loading-spinner";
-import { Receipt, Calendar, ChevronDown, ChevronUp, Filter, RotateCcw, DollarSign, XCircle, Trash2, AlertTriangle } from "lucide-react";
+import { Receipt, Calendar, ChevronDown, ChevronUp, Filter, RotateCcw, DollarSign, XCircle, Trash2, AlertTriangle, ScanLine } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/helpers";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -58,9 +57,10 @@ export default function TransactionsPage() {
   // Delete transaction state
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [transactionToDelete, setTransactionToDelete] = useState<Transaction | null>(null);
-  const [managerPin, setManagerPin] = useState("");
+  const [managerBarcode, setManagerBarcode] = useState("");
   const [deleteError, setDeleteError] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const managerBarcodeRef = useRef<HTMLInputElement>(null);
   
   useEffect(() => {
     fetchTransactions();
@@ -98,14 +98,15 @@ export default function TransactionsPage() {
   
   const openDeleteModal = (txn: Transaction) => {
     setTransactionToDelete(txn);
-    setManagerPin("");
+    setManagerBarcode("");
     setDeleteError("");
     setDeleteModalOpen(true);
+    setTimeout(() => managerBarcodeRef.current?.focus(), 100);
   };
   
   const verifyAndDelete = async () => {
-    if (managerPin.length < 4) {
-      setDeleteError("Enter manager PIN");
+    if (!managerBarcode.trim()) {
+      setDeleteError("Scan manager barcode");
       return;
     }
     
@@ -113,21 +114,28 @@ export default function TransactionsPage() {
     setDeleteError("");
     
     try {
-      // Verify manager PIN
-      const pinRes = await fetch("/api/employees/verify-pin", {
+      // Verify manager barcode
+      const res = await fetch("/api/employees/verify-pin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ companyId, pin: managerPin, requireManager: true }),
+        body: JSON.stringify({ companyId, barcode: managerBarcode }),
       });
       
-      if (!pinRes.ok) {
-        setDeleteError("Invalid manager PIN");
-        setManagerPin("");
+      if (!res.ok) {
+        setDeleteError("Invalid barcode");
+        setManagerBarcode("");
         setDeleting(false);
         return;
       }
       
-      const manager = await pinRes.json();
+      const manager = await res.json();
+      
+      if (!manager.isManager) {
+        setDeleteError("Manager authorization required");
+        setManagerBarcode("");
+        setDeleting(false);
+        return;
+      }
       
       // Delete (void) the transaction
       const deleteRes = await fetch(
@@ -143,12 +151,23 @@ export default function TransactionsPage() {
       await fetchTransactions();
       setDeleteModalOpen(false);
       setTransactionToDelete(null);
-      setManagerPin("");
+      setManagerBarcode("");
     } catch (err) {
       console.error("Delete error:", err);
       setDeleteError("Failed to delete transaction");
     } finally {
       setDeleting(false);
+    }
+  };
+  
+  const handleBarcodeInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setManagerBarcode(value);
+    setDeleteError("");
+    
+    // Auto-submit on EMP- barcode
+    if (value.startsWith("EMP-") && value.length >= 9) {
+      setTimeout(() => verifyAndDelete(), 100);
     }
   };
   
@@ -412,7 +431,7 @@ export default function TransactionsPage() {
         onClose={() => {
           setDeleteModalOpen(false);
           setTransactionToDelete(null);
-          setManagerPin("");
+          setManagerBarcode("");
           setDeleteError("");
         }}
         title="Void Transaction"
@@ -435,37 +454,39 @@ export default function TransactionsPage() {
           </div>
           
           <div>
-            <p className="text-gray-400 text-sm mb-2">Enter manager PIN to authorize</p>
+            <p className="text-gray-400 text-sm mb-2">Scan manager barcode to authorize</p>
             
-            <div className="flex justify-center gap-3 mb-4">
-              {[0, 1, 2, 3].map((i) => (
-                <div
-                  key={i}
-                  className={`w-5 h-5 rounded-full transition-colors ${
-                    i < managerPin.length ? "bg-green-500" : "bg-gray-700"
-                  }`}
-                />
-              ))}
+            <div className="p-6 bg-gray-900/50 rounded-lg border border-dashed border-gray-700 mb-4">
+              <motion.div
+                animate={{ opacity: [0.5, 1, 0.5] }}
+                transition={{ duration: 2, repeat: Infinity }}
+                className="text-green-400 mb-3 flex justify-center"
+              >
+                <ScanLine className="h-12 w-12" />
+              </motion.div>
+              <Input
+                ref={managerBarcodeRef}
+                value={managerBarcode}
+                onChange={handleBarcodeInput}
+                onKeyDown={(e) => e.key === "Enter" && verifyAndDelete()}
+                placeholder="Scan manager barcode"
+                className="bg-gray-800 border-gray-600 text-white text-center font-mono"
+                autoComplete="off"
+              />
             </div>
             
             {deleteError && (
               <p className="text-red-400 text-sm text-center mb-4">{deleteError}</p>
             )}
             
-            <NumericKeypad
-              onKeyPress={(key) => managerPin.length < 4 && setManagerPin(managerPin + key)}
-              onClear={() => setManagerPin("")}
-              onBackspace={() => setManagerPin(managerPin.slice(0, -1))}
-            />
-            
-            <div className="flex gap-4 mt-4">
+            <div className="flex gap-4">
               <Button
                 variant="outline"
                 className="flex-1 border-gray-600 text-gray-300"
                 onClick={() => {
                   setDeleteModalOpen(false);
                   setTransactionToDelete(null);
-                  setManagerPin("");
+                  setManagerBarcode("");
                 }}
               >
                 Cancel
@@ -473,7 +494,7 @@ export default function TransactionsPage() {
               <Button
                 className="flex-1 bg-red-600 hover:bg-red-700"
                 onClick={verifyAndDelete}
-                disabled={deleting || managerPin.length < 4}
+                disabled={deleting || !managerBarcode.trim()}
               >
                 {deleting ? <LoadingSpinner size="sm" /> : "Void Transaction"}
               </Button>

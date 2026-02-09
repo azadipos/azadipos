@@ -1,6 +1,16 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 
+// Generate unique employee barcode (EMP-XXXXX format)
+function generateEmployeeBarcode(): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let i = 0; i < 5; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return `EMP-${code}`;
+}
+
 export async function GET(
   request: Request,
   { params }: { params: { id: string } }
@@ -28,14 +38,39 @@ export async function PUT(
   try {
     const body = await request.json();
     
+    // If regenerateBarcode is requested, generate a new one
+    let newBarcode = body.barcode;
+    if (body.regenerateBarcode) {
+      const employee = await prisma.employee.findUnique({
+        where: { id: params.id },
+      });
+      if (employee) {
+        newBarcode = generateEmployeeBarcode();
+        let attempts = 0;
+        while (attempts < 10) {
+          const existing = await prisma.employee.findFirst({
+            where: { companyId: employee.companyId, barcode: newBarcode, id: { not: params.id } },
+          });
+          if (!existing) break;
+          newBarcode = generateEmployeeBarcode();
+          attempts++;
+        }
+      }
+    }
+    
+    const updateData: any = {
+      name: body.name,
+      isManager: body.isManager,
+      isActive: body.isActive,
+    };
+    
+    if (newBarcode !== undefined) {
+      updateData.barcode = newBarcode;
+    }
+    
     const employee = await prisma.employee.update({
       where: { id: params.id },
-      data: {
-        name: body.name,
-        pin: body.pin,
-        isManager: body.isManager,
-        isActive: body.isActive,
-      },
+      data: updateData,
     });
     
     return NextResponse.json(employee);

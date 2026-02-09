@@ -3,6 +3,16 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 
+// Generate unique employee barcode (EMP-XXXXX format)
+function generateEmployeeBarcode(): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let i = 0; i < 5; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return `EMP-${code}`;
+}
+
 export async function GET(req: Request, { params }: { params: { id: string } }) {
   try {
     const employees = await prisma.employee.findMany({
@@ -18,21 +28,29 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   try {
-    const { name, pin, isManager } = await req.json();
+    const { name, isManager } = await req.json();
     
-    if (!name || !pin) {
-      return NextResponse.json({ error: "Name and PIN are required" }, { status: 400 });
+    if (!name) {
+      return NextResponse.json({ error: "Name is required" }, { status: 400 });
     }
     
-    if (pin.length < 4 || pin.length > 6) {
-      return NextResponse.json({ error: "PIN must be 4-6 digits" }, { status: 400 });
+    // Generate unique barcode
+    let barcode = generateEmployeeBarcode();
+    let attempts = 0;
+    while (attempts < 10) {
+      const existing = await prisma.employee.findFirst({
+        where: { companyId: params.id, barcode },
+      });
+      if (!existing) break;
+      barcode = generateEmployeeBarcode();
+      attempts++;
     }
     
     const employee = await prisma.employee.create({
       data: {
         companyId: params.id,
         name,
-        pin,
+        barcode,
         isManager: isManager ?? false,
       },
     });
@@ -40,7 +58,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   } catch (error: any) {
     console.error("Error creating employee:", error);
     if (error?.code === "P2002") {
-      return NextResponse.json({ error: "An employee with this PIN already exists" }, { status: 400 });
+      return NextResponse.json({ error: "Failed to generate unique barcode" }, { status: 400 });
     }
     return NextResponse.json({ error: "Failed to create employee" }, { status: 500 });
   }

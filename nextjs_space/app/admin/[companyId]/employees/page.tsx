@@ -1,19 +1,19 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AdminLayout } from "@/components/admin-layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/modal";
 import { LoadingSpinner } from "@/components/loading-spinner";
-import { Plus, Edit2, Trash2, Users, Shield, UserCheck, UserX } from "lucide-react";
+import { Plus, Edit2, Users, Shield, UserCheck, UserX, Printer, RefreshCw, Barcode } from "lucide-react";
 import { motion } from "framer-motion";
 
 interface Employee {
   id: string;
   name: string;
-  pin: string;
+  barcode: string | null;
   isManager: boolean;
   isActive: boolean;
 }
@@ -28,8 +28,10 @@ export default function EmployeesPage() {
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [printEmployee, setPrintEmployee] = useState<Employee | null>(null);
+  const printRef = useRef<HTMLDivElement>(null);
   
-  const [formData, setFormData] = useState({ name: "", pin: "", isManager: false });
+  const [formData, setFormData] = useState({ name: "", isManager: false });
   
   useEffect(() => {
     fetchEmployees();
@@ -50,10 +52,10 @@ export default function EmployeesPage() {
   const openModal = (employee?: Employee) => {
     if (employee) {
       setEditingEmployee(employee);
-      setFormData({ name: employee.name, pin: employee.pin, isManager: employee.isManager });
+      setFormData({ name: employee.name, isManager: employee.isManager });
     } else {
       setEditingEmployee(null);
-      setFormData({ name: "", pin: "", isManager: false });
+      setFormData({ name: "", isManager: false });
     }
     setError("");
     setShowModal(true);
@@ -66,16 +68,8 @@ export default function EmployeesPage() {
   };
   
   const saveEmployee = async () => {
-    if (!formData.name.trim() || !formData.pin.trim()) {
-      setError("Name and PIN are required");
-      return;
-    }
-    if (formData.pin.length < 4 || formData.pin.length > 6) {
-      setError("PIN must be 4-6 digits");
-      return;
-    }
-    if (!/^\d+$/.test(formData.pin)) {
-      setError("PIN must contain only numbers");
+    if (!formData.name.trim()) {
+      setError("Name is required");
       return;
     }
     
@@ -121,6 +115,58 @@ export default function EmployeesPage() {
     }
   };
   
+  const regenerateBarcode = async (employee: Employee) => {
+    try {
+      const res = await fetch(`/api/employees/${employee.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...employee, regenerateBarcode: true }),
+      });
+      if (res.ok) {
+        fetchEmployees();
+      }
+    } catch (err) {
+      console.error("Failed to regenerate barcode:", err);
+    }
+  };
+  
+  const handlePrint = (employee: Employee) => {
+    setPrintEmployee(employee);
+    setTimeout(() => {
+      if (printRef.current) {
+        const printWindow = window.open("", "_blank");
+        if (printWindow) {
+          printWindow.document.write(`
+            <html>
+              <head>
+                <title>Employee Barcode - ${employee.name}</title>
+                <style>
+                  @page { size: 2in 1in; margin: 0; }
+                  body { font-family: Arial, sans-serif; margin: 0; padding: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
+                  .barcode-container { text-align: center; padding: 8px; border: 1px solid #000; border-radius: 4px; }
+                  .name { font-size: 12px; font-weight: bold; margin-bottom: 4px; }
+                  .barcode { font-size: 14px; font-family: monospace; letter-spacing: 2px; font-weight: bold; }
+                  .label { font-size: 8px; color: #666; margin-top: 4px; }
+                </style>
+              </head>
+              <body>
+                <div class="barcode-container">
+                  <div class="name">${employee.name}</div>
+                  <div class="barcode">${employee.barcode || "N/A"}</div>
+                  <div class="label">Scan to clock in</div>
+                </div>
+              </body>
+            </html>
+          `);
+          printWindow.document.close();
+          printWindow.print();
+          printWindow.close();
+        }
+      }
+      setPrintEmployee(null);
+    }, 100);
+  };
+  
   const activeEmployees = (employees ?? []).filter((e) => e?.isActive);
   const inactiveEmployees = (employees ?? []).filter((e) => !e?.isActive);
   
@@ -164,8 +210,8 @@ export default function EmployeesPage() {
                       onClick={() => router.push(`/admin/${companyId}/employees/${employee?.id}`)}
                     >
                       <div className="flex items-start justify-between">
-                        <div>
-                          <div className="flex items-center gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <h3 className="font-semibold text-lg">{employee?.name}</h3>
                             {employee?.isManager && (
                               <span className="inline-flex items-center gap-1 text-xs bg-blue-600/20 text-blue-400 px-2 py-1 rounded">
@@ -174,14 +220,23 @@ export default function EmployeesPage() {
                               </span>
                             )}
                           </div>
-                          <p className="text-sm text-gray-500 mt-1 font-mono">PIN: {employee?.pin}</p>
-                          <p className="text-xs text-gray-600 mt-2">Click to view stats \u2192</p>
+                          <div className="flex items-center gap-2 mt-2">
+                            <Barcode className="h-4 w-4 text-gray-500" />
+                            <span className="text-sm text-green-400 font-mono">{employee?.barcode || "No barcode"}</span>
+                          </div>
+                          <p className="text-xs text-gray-600 mt-2">Click to view stats →</p>
                         </div>
-                        <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                          <Button variant="ghost" size="icon" onClick={() => openModal(employee)} className="text-gray-400 hover:text-white">
+                        <div className="flex flex-col gap-1" onClick={(e) => e.stopPropagation()}>
+                          <Button variant="ghost" size="icon" onClick={() => handlePrint(employee)} className="text-gray-400 hover:text-green-400" title="Print Barcode">
+                            <Printer className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => regenerateBarcode(employee)} className="text-gray-400 hover:text-yellow-400" title="Regenerate Barcode">
+                            <RefreshCw className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => openModal(employee)} className="text-gray-400 hover:text-white" title="Edit">
                             <Edit2 className="h-4 w-4" />
                           </Button>
-                          <Button variant="ghost" size="icon" onClick={() => toggleEmployeeStatus(employee)} className="text-gray-400 hover:text-red-400">
+                          <Button variant="ghost" size="icon" onClick={() => toggleEmployeeStatus(employee)} className="text-gray-400 hover:text-red-400" title="Deactivate">
                             <UserX className="h-4 w-4" />
                           </Button>
                         </div>
@@ -227,17 +282,20 @@ export default function EmployeesPage() {
               className="bg-gray-800 border-gray-600 text-white"
             />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">PIN (4-6 digits) *</label>
-            <Input
-              type="password"
-              maxLength={6}
-              value={formData.pin}
-              onChange={(e) => setFormData({ ...formData, pin: e.target.value.replace(/\D/g, "") })}
-              placeholder="Enter PIN"
-              className="bg-gray-800 border-gray-600 text-white font-mono tracking-widest"
-            />
-          </div>
+          {editingEmployee && editingEmployee.barcode && (
+            <div className="p-3 bg-gray-900 rounded-lg border border-gray-700">
+              <p className="text-xs text-gray-500 mb-1">Employee Barcode</p>
+              <div className="flex items-center gap-2">
+                <Barcode className="h-5 w-5 text-green-400" />
+                <span className="font-mono text-green-400 text-lg">{editingEmployee.barcode}</span>
+              </div>
+            </div>
+          )}
+          {!editingEmployee && (
+            <p className="text-sm text-gray-500">
+              A unique barcode will be automatically generated for this employee.
+            </p>
+          )}
           <div>
             <label className="flex items-center gap-3 cursor-pointer">
               <input
@@ -246,7 +304,7 @@ export default function EmployeesPage() {
                 onChange={(e) => setFormData({ ...formData, isManager: e.target.checked })}
                 className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-600"
               />
-              <span className="text-sm text-gray-300">Manager (can close out registers)</span>
+              <span className="text-sm text-gray-300">Manager (can authorize refunds, close registers, etc.)</span>
             </label>
           </div>
           {error && <p className="text-red-400 text-sm">{error}</p>}

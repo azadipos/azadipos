@@ -14,6 +14,9 @@ model Company {
   name         String
   createdAt    DateTime @default(now())
   
+  // Return policy settings
+  defaultReturnPeriodDays Int @default(30)
+  
   categories   Category[]
   vendors      Vendor[]
   items        Item[]
@@ -24,6 +27,7 @@ model Company {
   storeCredits StoreCredit[]
   receivingLogs ReceivingLog[]
   payouts      Payout[]
+  returnPolicies ReturnPolicy[]
 }
 
 model Category {
@@ -75,6 +79,10 @@ model Item {
   quantityOnHand Int      @default(0)
   createdAt      DateTime @default(now())
   
+  // Return policy overrides (null means use category/company default)
+  returnPeriodDays Int?
+  noReturns        Boolean @default(false)
+  
   transactionItems TransactionItem[]
   
   @@unique([companyId, barcode])
@@ -87,7 +95,8 @@ model Employee {
   companyId String
   company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   name      String
-  pin       String
+  pin       String?  // Legacy PIN (deprecated)
+  barcode   String?  // Unique scannable barcode (EMP-XXXXX format)
   isManager Boolean  @default(false)
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
@@ -95,8 +104,10 @@ model Employee {
   shifts             Shift[]
   transactions       Transaction[] @relation("EmployeeTransactions")
   authorizedTransactions Transaction[] @relation("AuthorizedTransactions")
+  issuedStoreCredits     StoreCredit[] @relation("IssuedByEmployee")
+  authorizedStoreCredits StoreCredit[] @relation("AuthorizedByEmployee")
   
-  @@unique([companyId, pin])
+  @@unique([companyId, barcode])
 }
 
 model Shift {
@@ -182,7 +193,9 @@ model StoreCredit {
   redeemedTransactionId   String?
   description             String?
   issuedByEmployeeId      String?
+  issuedBy                Employee? @relation("IssuedByEmployee", fields: [issuedByEmployeeId], references: [id])
   authorizedByEmployeeId  String?
+  authorizedBy            Employee? @relation("AuthorizedByEmployee", fields: [authorizedByEmployeeId], references: [id])
 }
 
 model ReceivingLog {
@@ -214,4 +227,22 @@ model User {
   password      String
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+}
+
+model ReturnPolicy {
+  id              String   @id @default(cuid())
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  // Target type: "item" or "category"
+  targetType      String
+  targetId        String   // Item ID or Category ID
+  
+  // Policy settings
+  returnPeriodDays Int?    // null means use company default
+  noReturns        Boolean @default(false)
+  
+  createdAt       DateTime @default(now())
+  
+  @@unique([companyId, targetType, targetId])
 }
