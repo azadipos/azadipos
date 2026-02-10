@@ -28,6 +28,9 @@ model Company {
   receivingLogs ReceivingLog[]
   payouts      Payout[]
   returnPolicies ReturnPolicy[]
+  customers    Customer[]
+  loyaltyConfig LoyaltyConfig?
+  giftCards    GiftCard[]
 }
 
 model Category {
@@ -98,6 +101,7 @@ model Employee {
   pin       String?  // Legacy PIN (deprecated)
   barcode   String?  // Unique scannable barcode (EMP-XXXXX format)
   isManager Boolean  @default(false)
+  inSales   Boolean  @default(true)  // If false, excluded from sales metrics
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   
@@ -106,6 +110,7 @@ model Employee {
   authorizedTransactions Transaction[] @relation("AuthorizedTransactions")
   issuedStoreCredits     StoreCredit[] @relation("IssuedByEmployee")
   authorizedStoreCredits StoreCredit[] @relation("AuthorizedByEmployee")
+  closedShifts       Shift[] @relation("ShiftClosedBy")
   
   @@unique([companyId, barcode])
 }
@@ -123,6 +128,8 @@ model Shift {
   closingBalance Float?
   cashInjections Float     @default(0)
   status         String    @default("open")
+  closedByEmployeeId String?
+  closedBy       Employee? @relation("ShiftClosedBy", fields: [closedByEmployeeId], references: [id])
   
   transactions   Transaction[]
 }
@@ -147,6 +154,10 @@ model Transaction {
   linkedTransactionId   String?
   authorizedByEmployeeId String?
   authorizedBy          Employee? @relation("AuthorizedTransactions", fields: [authorizedByEmployeeId], references: [id])
+  customerId            String?
+  customer              Customer? @relation(fields: [customerId], references: [id])
+  loyaltyPointsEarned   Int      @default(0)
+  loyaltyPointsRedeemed Int      @default(0)
   createdAt             DateTime @default(now())
   
   items                 TransactionItem[]
@@ -245,4 +256,68 @@ model ReturnPolicy {
   createdAt       DateTime @default(now())
   
   @@unique([companyId, targetType, targetId])
+}
+
+// Customer Loyalty
+model Customer {
+  id           String   @id @default(cuid())
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  phone        String
+  name         String
+  email        String?
+  loyaltyPoints Int     @default(0)
+  totalSpent   Float    @default(0)
+  visitCount   Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  transactions Transaction[]
+  
+  @@unique([companyId, phone])
+}
+
+model LoyaltyConfig {
+  id                  String   @id @default(cuid())
+  companyId           String   @unique
+  company             Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  
+  // Points earning: e.g., 1 point per $1 spent
+  pointsPerDollar     Float    @default(1)
+  
+  // Rewards (stored as JSON array of tiers)
+  // e.g., [{"points": 100, "type": "percent_off", "value": 5}, {"points": 500, "type": "cash_off", "value": 10}]
+  rewardTiersJson     String?
+  
+  isEnabled           Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+// Gift Cards
+model GiftCard {
+  id           String    @id @default(cuid())
+  companyId    String
+  company      Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  barcode      String    @unique
+  initialValue Float
+  balance      Float
+  isActive     Boolean   @default(true)
+  purchasedAt  DateTime?  // When it was sold to a customer
+  purchaseTransactionId String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  
+  // Track usage history
+  usageHistory GiftCardUsage[]
+}
+
+model GiftCardUsage {
+  id            String   @id @default(cuid())
+  giftCardId    String
+  giftCard      GiftCard @relation(fields: [giftCardId], references: [id], onDelete: Cascade)
+  transactionId String?
+  amount        Float
+  balanceAfter  Float
+  createdAt     DateTime @default(now())
 }

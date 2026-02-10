@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Modal } from "@/components/modal";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { usePOS } from "@/lib/pos-context";
 import { formatCurrency } from "@/lib/helpers";
@@ -18,6 +20,8 @@ import {
   Gift,
   CheckCircle,
   AlertTriangle,
+  ScanLine,
+  Shield,
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -60,6 +64,13 @@ export default function ShiftReportPage() {
   const [closing, setClosing] = useState(false);
   const [closed, setClosed] = useState(false);
   
+  // Manager authorization state
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [managerBarcode, setManagerBarcode] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [verifying, setVerifying] = useState(false);
+  const barcodeInputRef = useRef<HTMLInputElement>(null);
+  
   useEffect(() => {
     if (!employee || !shiftId) {
       router.push(`/pos/${companyId}/login`);
@@ -67,6 +78,12 @@ export default function ShiftReportPage() {
     }
     fetchShiftData();
   }, [employee, shiftId, companyId, router]);
+  
+  useEffect(() => {
+    if (showAuthModal && barcodeInputRef.current) {
+      setTimeout(() => barcodeInputRef.current?.focus(), 100);
+    }
+  }, [showAuthModal]);
   
   const fetchShiftData = async () => {
     if (!shiftId) return;
@@ -92,31 +109,84 @@ export default function ShiftReportPage() {
     }
   };
   
-  const handleCloseShift = async () => {
+  const initiateCloseShift = () => {
     if (!closingBalance) return;
+    setShowAuthModal(true);
+    setManagerBarcode("");
+    setAuthError("");
+  };
+  
+  const handleBarcodeInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setManagerBarcode(value);
+    setAuthError("");
     
-    setClosing(true);
+    // Auto-submit when barcode pattern detected (fast input)
+    if (value.startsWith("EMP-") && value.length >= 9) {
+      verifyManagerAndClose(value);
+    }
+  };
+  
+  const verifyManagerAndClose = async (barcode: string) => {
+    if (!barcode || verifying) return;
+    
+    setVerifying(true);
+    setAuthError("");
+    
     try {
+      // Verify manager
+      const verifyRes = await fetch("/api/employees/verify-pin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyId, barcode }),
+      });
+      
+      if (!verifyRes.ok) {
+        setAuthError("Invalid manager barcode");
+        setManagerBarcode("");
+        setTimeout(() => barcodeInputRef.current?.focus(), 100);
+        setVerifying(false);
+        return;
+      }
+      
+      const manager = await verifyRes.json();
+      
+      if (!manager.isManager) {
+        setAuthError("Manager authorization required");
+        setManagerBarcode("");
+        setTimeout(() => barcodeInputRef.current?.focus(), 100);
+        setVerifying(false);
+        return;
+      }
+      
+      // Close the shift with manager authorization
+      setClosing(true);
       const res = await fetch(`/api/shifts/${shiftId}/close`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           closingBalance: parseFloat(closingBalance),
+          closedByEmployeeId: manager.id,
         }),
       });
       
       if (res.ok) {
+        setShowAuthModal(false);
         setClosed(true);
         if (closeShift) closeShift();
         
         setTimeout(() => {
           router.push(`/pos/${companyId}/login`);
         }, 3000);
+      } else {
+        setAuthError("Failed to close shift");
       }
     } catch (err) {
       console.error("Failed to close shift:", err);
+      setAuthError("An error occurred");
     } finally {
       setClosing(false);
+      setVerifying(false);
     }
   };
   
@@ -377,13 +447,88 @@ export default function ShiftReportPage() {
           <Button
             size="lg"
             className="bg-red-600 hover:bg-red-700 h-14 px-8 text-lg"
-            onClick={handleCloseShift}
+            onClick={initiateCloseShift}
             disabled={!closingBalance || closing}
           >
             {closing ? <LoadingSpinner size="sm" /> : "Close Shift"}
           </Button>
         </motion.div>
       </div>
+      
+      {/* Manager Authorization Modal */}
+      <Modal
+        isOpen={showAuthModal}
+        onClose={() => !verifying && !closing && setShowAuthModal(false)}
+        title="Manager Authorization Required"
+      >
+        <div className="space-y-4">
+          <div className="p-4 bg-yellow-600/20 border border-yellow-600/30 rounded-lg">
+            <div className="flex items-center gap-2 mb-2">
+              <Shield className="h-5 w-5 text-yellow-400" />
+              <span className="font-semibold text-yellow-400">Authorization Required</span>
+            </div>
+            <p className="text-sm text-gray-300">
+              A manager must scan their barcode to close the shift and verify the cash count.
+            </p>
+          </div>
+          
+          <div className="p-4 bg-gray-800/50 rounded-lg">
+            <p className="text-sm text-gray-400 mb-2">Cash Variance</p>
+            <p className={`text-xl font-bold ${
+              Math.abs(variance) < 0.01 ? "text-green-400" :
+              Math.abs(variance) <= 5 ? "text-yellow-400" : "text-red-400"
+            }`}>
+              {Math.abs(variance) < 0.01 
+                ? "Balanced" 
+                : variance > 0 
+                ? `Over by ${formatCurrency(variance)}` 
+                : `Short by ${formatCurrency(Math.abs(variance))}`
+              }
+            </p>
+          </div>
+          
+          <div>
+            <label className="block text-sm text-gray-400 mb-2">
+              <ScanLine className="inline h-4 w-4 mr-1" />
+              Scan Manager Barcode
+            </label>
+            <Input
+              ref={barcodeInputRef}
+              type="text"
+              value={managerBarcode}
+              onChange={handleBarcodeInput}
+              placeholder="Scan or type manager barcode..."
+              className="font-mono"
+              disabled={verifying || closing}
+              autoComplete="off"
+            />
+          </div>
+          
+          {authError && (
+            <div className="p-3 bg-red-600/20 border border-red-600/30 rounded-lg text-red-400 text-sm">
+              {authError}
+            </div>
+          )}
+          
+          <div className="flex gap-3 pt-2">
+            <Button
+              variant="ghost"
+              onClick={() => setShowAuthModal(false)}
+              disabled={verifying || closing}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => verifyManagerAndClose(managerBarcode)}
+              disabled={!managerBarcode || verifying || closing}
+              className="flex-1 bg-red-600 hover:bg-red-700"
+            >
+              {verifying || closing ? <LoadingSpinner size="sm" /> : "Authorize & Close"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

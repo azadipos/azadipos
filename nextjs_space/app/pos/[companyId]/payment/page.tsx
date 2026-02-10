@@ -265,7 +265,7 @@ export default function PaymentPage() {
               <Button
                 variant="pos"
                 className="w-full mb-4 h-12"
-                onClick={() => handleQuickAmount(Math.ceil(total))}
+                onClick={() => setCashGiven(total.toFixed(2))}
               >
                 Exact: {formatCurrency(total)}
               </Button>

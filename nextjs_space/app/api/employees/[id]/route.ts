@@ -62,6 +62,7 @@ export async function PUT(
       name: body.name,
       isManager: body.isManager,
       isActive: body.isActive,
+      inSales: body.inSales ?? true,
     };
     
     if (newBarcode !== undefined) {

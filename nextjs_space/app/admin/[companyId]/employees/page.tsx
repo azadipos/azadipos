@@ -15,6 +15,7 @@ interface Employee {
   name: string;
   barcode: string | null;
   isManager: boolean;
+  inSales: boolean;
   isActive: boolean;
 }
 
@@ -31,7 +32,7 @@ export default function EmployeesPage() {
   const [printEmployee, setPrintEmployee] = useState<Employee | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
   
-  const [formData, setFormData] = useState({ name: "", isManager: false });
+  const [formData, setFormData] = useState({ name: "", isManager: false, inSales: true });
   
   useEffect(() => {
     fetchEmployees();
@@ -52,10 +53,10 @@ export default function EmployeesPage() {
   const openModal = (employee?: Employee) => {
     if (employee) {
       setEditingEmployee(employee);
-      setFormData({ name: employee.name, isManager: employee.isManager });
+      setFormData({ name: employee.name, isManager: employee.isManager, inSales: employee.inSales ?? true });
     } else {
       setEditingEmployee(null);
-      setFormData({ name: "", isManager: false });
+      setFormData({ name: "", isManager: false, inSales: true });
     }
     setError("");
     setShowModal(true);
@@ -296,7 +297,7 @@ export default function EmployeesPage() {
               A unique barcode will be automatically generated for this employee.
             </p>
           )}
-          <div>
+          <div className="space-y-3">
             <label className="flex items-center gap-3 cursor-pointer">
               <input
                 type="checkbox"
@@ -305,6 +306,15 @@ export default function EmployeesPage() {
                 className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-600"
               />
               <span className="text-sm text-gray-300">Manager (can authorize refunds, close registers, etc.)</span>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={formData.inSales}
+                onChange={(e) => setFormData({ ...formData, inSales: e.target.checked })}
+                className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-blue-600"
+              />
+              <span className="text-sm text-gray-300">In Sales (included in sales metrics and comparisons)</span>
             </label>
           </div>
           {error && <p className="text-red-400 text-sm">{error}</p>}

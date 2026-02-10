@@ -7,7 +7,7 @@ export async function POST(
 ) {
   try {
     const body = await request.json();
-    const { closingBalance } = body;
+    const { closingBalance, closedByEmployeeId } = body;
     
     const shift = await prisma.shift.update({
       where: { id: params.id },
@@ -15,6 +15,7 @@ export async function POST(
         endTime: new Date(),
         closingBalance: closingBalance ?? null,
         status: "closed",
+        closedByEmployeeId: closedByEmployeeId || null,
       },
     });
     

@@ -54,7 +54,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   try {
     const data = await req.json();
-    const { employeeId, shiftId, items, paymentMethod, cashGiven, type } = data;
+    const { employeeId, shiftId, items, paymentMethod, cashGiven, type, customerId, loyaltyPointsRedeemed } = data;
     
     if (!employeeId || !items || items.length === 0) {
       return NextResponse.json({ error: "Employee and items are required" }, { status: 400 });
@@ -92,6 +92,17 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     const total = Math.round((subtotal + totalTax) * 100) / 100;
     const changeDue = cashGiven ? Math.round((cashGiven - total) * 100) / 100 : null;
     
+    // Calculate loyalty points earned (if customer loyalty enabled)
+    let loyaltyPointsEarned = 0;
+    if (customerId && (type || "sale") === "sale") {
+      const loyaltyConfig = await prisma.loyaltyConfig.findUnique({
+        where: { companyId: params.id },
+      });
+      if (loyaltyConfig?.isEnabled) {
+        loyaltyPointsEarned = Math.floor(total * loyaltyConfig.pointsPerDollar);
+      }
+    }
+    
     const transaction = await prisma.transaction.create({
       data: {
         companyId: params.id,
@@ -105,6 +116,9 @@ export async function POST(req: Request, { params }: { params: { id: string } })
         paymentMethod: paymentMethod || "cash",
         cashGiven: cashGiven || null,
         changeDue,
+        customerId: customerId || null,
+        loyaltyPointsEarned,
+        loyaltyPointsRedeemed: loyaltyPointsRedeemed || 0,
         items: {
           create: itemsWithTax,
         },
@@ -122,6 +136,30 @@ export async function POST(req: Request, { params }: { params: { id: string } })
         },
       },
     });
+    
+    // Update inventory quantities for sales
+    if ((type || "sale") === "sale") {
+      for (const item of itemsWithTax) {
+        await prisma.item.update({
+          where: { id: item.itemId },
+          data: {
+            quantityOnHand: { decrement: Math.ceil(item.quantity) },
+          },
+        });
+      }
+    }
+    
+    // Update customer loyalty points
+    if (customerId && (type || "sale") === "sale") {
+      await prisma.customer.update({
+        where: { id: customerId },
+        data: {
+          loyaltyPoints: { increment: loyaltyPointsEarned - (loyaltyPointsRedeemed || 0) },
+          totalSpent: { increment: total },
+          visitCount: { increment: 1 },
+        },
+      });
+    }
     
     return NextResponse.json(transaction);
   } catch (error) {
