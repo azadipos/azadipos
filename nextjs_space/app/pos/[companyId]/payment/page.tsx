@@ -12,11 +12,13 @@ import { motion, AnimatePresence } from "framer-motion";
 
 interface CartData {
   items: any[];
-  totals: { subtotal: number; tax: number; total: number; storeCreditTotal?: number; grossTotal?: number };
+  totals: { subtotal: number; tax: number; total: number; storeCreditTotal?: number; giftCardTotal?: number; grossTotal?: number };
   transactionId: string;
   employeeId: string;
   shiftId: string;
   appliedStoreCredits?: { barcode: string; amount: number }[];
+  appliedGiftCards?: { barcode: string; amount: number; giftCardId: string }[];
+  customer?: { id: string; name: string; phone: string; loyaltyPoints: number } | null;
 }
 
 export default function PaymentPage() {
@@ -79,18 +81,29 @@ export default function PaymentPage() {
     setError("");
     
     try {
+      // Filter out gift card items from regular items (they start with "gc-")
+      const regularItems = (cartData.items ?? []).filter((item) => !item?.id?.startsWith("gc-"));
+      const giftCardItemsToSell = (cartData.items ?? []).filter((item) => item?.id?.startsWith("gc-"));
+      
       const transactionData = {
         employeeId: employee?.id,
         shiftId: shiftId,
         paymentMethod,
         cashGiven: paymentMethod === "cash" ? cashGivenAmount : null,
         storeCreditApplied: cartData.totals?.storeCreditTotal || 0,
-        items: (cartData.items ?? []).map((item) => ({
+        giftCardApplied: cartData.totals?.giftCardTotal || 0,
+        customerId: cartData.customer?.id || null,
+        items: regularItems.map((item) => ({
           itemId: item?.itemId,
           itemName: item?.name,
           quantity: item?.quantity,
           unitPrice: item?.price,
           isWeightItem: item?.isWeightPriced,
+        })),
+        // Include gift card sales as separate items
+        giftCardSales: giftCardItemsToSell.map((gc) => ({
+          giftCardId: gc?.itemId,
+          amount: gc?.price,
         })),
       };
       
@@ -121,6 +134,42 @@ export default function PaymentPage() {
             });
           } catch (err) {
             console.error("Failed to redeem store credit:", credit.barcode, err);
+          }
+        }
+      }
+      
+      // Redeem any applied gift cards (deduct from their balance)
+      if (cartData.appliedGiftCards && cartData.appliedGiftCards.length > 0) {
+        for (const giftCard of cartData.appliedGiftCards) {
+          try {
+            await fetch("/api/gift-cards/redeem", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                barcode: giftCard.barcode,
+                amount: Math.min(giftCard.amount, total + (cartData.totals?.giftCardTotal || 0)), // Don't redeem more than needed
+                transactionId: txn.id,
+              }),
+            });
+          } catch (err) {
+            console.error("Failed to redeem gift card:", giftCard.barcode, err);
+          }
+        }
+      }
+      
+      // Mark sold gift cards as purchased
+      if (giftCardItemsToSell.length > 0) {
+        for (const gc of giftCardItemsToSell) {
+          try {
+            await fetch(`/api/gift-cards/${gc.itemId}/activate`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                transactionId: txn.id,
+              }),
+            });
+          } catch (err) {
+            console.error("Failed to activate gift card:", gc.itemId, err);
           }
         }
       }

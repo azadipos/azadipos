@@ -6,7 +6,7 @@ import { AdminLayout } from "@/components/admin-layout";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { formatCurrency } from "@/lib/helpers";
-import { Package, AlertTriangle, Truck, TrendingDown, CheckCircle2, DollarSign, Info } from "lucide-react";
+import { Package, AlertTriangle, Truck, TrendingDown, CheckCircle2, DollarSign, Info, ArrowRightLeft, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface CostHistory {
@@ -30,7 +30,7 @@ interface ReorderItem {
     name: string;
   } | null;
   costHistory?: CostHistory[];
-  cheaperVendor?: { vendorName: string; cost: number; savings: number } | null;
+  cheaperVendor?: { vendorId: string; vendorName: string; cost: number; savings: number } | null;
 }
 
 interface GroupedItems {
@@ -47,6 +47,8 @@ export default function ReorderPage() {
   const [loading, setLoading] = useState(true);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [orderedItems, setOrderedItems] = useState<Set<string>>(new Set());
+  const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(new Set());
+  const [switchingVendor, setSwitchingVendor] = useState<string | null>(null);
   
   useEffect(() => {
     fetchReorderItems();
@@ -81,6 +83,7 @@ export default function ReorderPage() {
                   otherVendorCosts[0]
                 );
                 cheaperVendor = {
+                  vendorId: cheapest.vendorId || "",
                   vendorName: cheapest.vendorName || "Unknown",
                   cost: cheapest.cost,
                   savings: item.cost - cheapest.cost,
@@ -100,6 +103,40 @@ export default function ReorderPage() {
       console.error("Failed to fetch reorder items:", err);
     } finally {
       setLoading(false);
+    }
+  };
+  
+  const dismissCheaperVendorAlert = (itemId: string) => {
+    setDismissedAlerts(prev => {
+      const next = new Set(prev);
+      next.add(itemId);
+      return next;
+    });
+  };
+  
+  const switchItemVendor = async (itemId: string, newVendorId: string, newCost: number) => {
+    setSwitchingVendor(itemId);
+    try {
+      // Update item vendor and cost
+      const res = await fetch(`/api/items/${itemId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vendorId: newVendorId,
+          cost: newCost,
+        }),
+      });
+      
+      if (res.ok) {
+        // Refresh items to reflect the change
+        await fetchReorderItems();
+        // Dismiss the alert for this item
+        dismissCheaperVendorAlert(itemId);
+      }
+    } catch (err) {
+      console.error("Failed to switch vendor:", err);
+    } finally {
+      setSwitchingVendor(null);
     }
   };
   
@@ -316,14 +353,50 @@ export default function ReorderPage() {
                         </div>
                         
                         {/* Cheaper Vendor Alert */}
-                        {item.cheaperVendor && (
-                          <div className="mt-3 ml-9 p-2 bg-green-900/30 border border-green-700/50 rounded-lg flex items-center gap-2 text-sm">
-                            <DollarSign className="h-4 w-4 text-green-400" />
-                            <span className="text-green-300">
-                              <strong>{item.cheaperVendor.vendorName}</strong> has this at{" "}
-                              <strong>{formatCurrency(item.cheaperVendor.cost)}</strong>/ea
-                              {" "}(save {formatCurrency(item.cheaperVendor.savings)} per unit)
-                            </span>
+                        {item.cheaperVendor && !dismissedAlerts.has(item.id) && (
+                          <div className="mt-3 ml-9 p-3 bg-green-900/30 border border-green-700/50 rounded-lg">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2 text-sm">
+                                <DollarSign className="h-4 w-4 text-green-400 flex-shrink-0" />
+                                <span className="text-green-300">
+                                  <strong>{item.cheaperVendor.vendorName}</strong> has this at{" "}
+                                  <strong>{formatCurrency(item.cheaperVendor.cost)}</strong>/ea
+                                  {" "}(save {formatCurrency(item.cheaperVendor.savings)} per unit)
+                                </span>
+                              </div>
+                              <button
+                                onClick={() => dismissCheaperVendorAlert(item.id)}
+                                className="text-gray-500 hover:text-gray-300 p-1"
+                                title="Dismiss this alert"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            </div>
+                            <div className="flex items-center gap-2 mt-2 ml-6">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="border-green-600 text-green-400 hover:bg-green-900/50 text-xs"
+                                onClick={() => switchItemVendor(item.id, item.cheaperVendor!.vendorId, item.cheaperVendor!.cost)}
+                                disabled={switchingVendor === item.id}
+                              >
+                                {switchingVendor === item.id ? (
+                                  <LoadingSpinner size="sm" />
+                                ) : (
+                                  <>
+                                    <ArrowRightLeft className="h-3 w-3 mr-1" />
+                                    Switch to {item.cheaperVendor.vendorName}
+                                  </>
+                                )}
+                              </Button>
+                              <span className="text-xs text-gray-500">or</span>
+                              <button
+                                onClick={() => dismissCheaperVendorAlert(item.id)}
+                                className="text-xs text-gray-400 hover:text-gray-200 underline"
+                              >
+                                Keep current vendor
+                              </button>
+                            </div>
                           </div>
                         )}
                       </motion.div>

@@ -124,22 +124,27 @@ export default function TransactionPage() {
     }
   }, [employee, companyId, router]);
   
-  // Always keep focus on barcode input
+  // Always keep focus on barcode input (pause when modals are open)
   useEffect(() => {
     const focusInput = () => {
-      if (!weightModalOpen && barcodeInputRef.current) {
+      // Don't refocus if any modal is open
+      if (!weightModalOpen && !customerModalOpen && barcodeInputRef.current) {
         barcodeInputRef.current.focus();
       }
     };
     
     focusInput();
     
-    // Refocus after any interaction
-    const handleClick = () => setTimeout(focusInput, 100);
+    // Refocus after any interaction, but only if modals are closed
+    const handleClick = () => {
+      if (!weightModalOpen && !customerModalOpen) {
+        setTimeout(focusInput, 100);
+      }
+    };
     document.addEventListener("click", handleClick);
     
     return () => document.removeEventListener("click", handleClick);
-  }, [weightModalOpen]);
+  }, [weightModalOpen, customerModalOpen]);
   
   // Search items - optimized with debounce
   const searchItems = useCallback(async (query: string) => {
