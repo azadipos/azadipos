@@ -61,6 +61,7 @@ export async function GET(request: Request) {
             reorderLevel: item.reorderPoint,
             reorderQty: Math.max(10, item.reorderPoint * 2 - item.quantityOnHand), // Suggested reorder qty
             soldSinceLastIntake: Math.round(soldAgg._sum.quantity ?? 0),
+            cost: item.cost,
             vendor: item.vendor,
           };
         })

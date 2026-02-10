@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { AdminLayout } from "@/components/admin-layout";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/loading-spinner";
-import { Package, Users, Receipt, Tags, Truck, TrendingUp, Gift, ClipboardList, DollarSign, BarChart3, AlertTriangle, ShieldCheck } from "lucide-react";
+import { Package, Users, Receipt, Tags, Truck, TrendingUp, Gift, ClipboardList, DollarSign, BarChart3, AlertTriangle, ShieldCheck, FileText, Heart, CreditCard } from "lucide-react";
 import { motion } from "framer-motion";
 
 interface Company {
@@ -133,6 +133,27 @@ export default function CompanyDashboard() {
       href: `/admin/${companyId}/policies`,
       color: "bg-slate-600/20 text-slate-400",
       description: "Return rules & limits",
+    },
+    {
+      label: "Audit Trail",
+      icon: FileText,
+      href: `/admin/${companyId}/audit-trail`,
+      color: "bg-zinc-600/20 text-zinc-400",
+      description: "Action history log",
+    },
+    {
+      label: "Loyalty Program",
+      icon: Heart,
+      href: `/admin/${companyId}/loyalty`,
+      color: "bg-rose-600/20 text-rose-400",
+      description: "Rewards & points",
+    },
+    {
+      label: "Gift Cards",
+      icon: CreditCard,
+      href: `/admin/${companyId}/gift-cards`,
+      color: "bg-indigo-600/20 text-indigo-400",
+      description: "Manage gift cards",
     },
   ];
   

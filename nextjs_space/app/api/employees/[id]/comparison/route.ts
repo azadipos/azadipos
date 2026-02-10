@@ -16,9 +16,9 @@ export async function GET(
       return NextResponse.json({ error: "Company ID required" }, { status: 400 });
     }
     
-    // Get all employees in this company
+    // Get all employees in this company (only those flagged as "in sales")
     const employees = await prisma.employee.findMany({
-      where: { companyId, isActive: true },
+      where: { companyId, isActive: true, inSales: true },
       select: { id: true, name: true, isManager: true },
     });
     

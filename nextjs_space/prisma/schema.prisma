@@ -321,3 +321,22 @@ model GiftCardUsage {
   balanceAfter  Float
   createdAt     DateTime @default(now())
 }
+
+// Audit Trail for tracking all sensitive actions
+model AuditTrail {
+  id           String   @id @default(cuid())
+  companyId    String
+  action       String   // e.g., "VOID", "REFUND", "DELETE_TRANSACTION", "STORE_CREDIT_ISSUED", "SHIFT_CLOSED", etc.
+  entityType   String   // "transaction", "store_credit", "shift", etc.
+  entityId     String?
+  description  String
+  employeeId   String?  // Employee who performed the action
+  employeeName String?
+  authorizedById String?  // Manager who authorized (if applicable)
+  authorizedByName String?
+  metadata     String?  // JSON for additional details
+  createdAt    DateTime @default(now())
+  
+  @@index([companyId, createdAt])
+  @@index([companyId, action])
+}

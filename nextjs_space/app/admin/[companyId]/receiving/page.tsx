@@ -35,6 +35,7 @@ interface ReceiveItem {
   itemId: string;
   itemName: string;
   quantity: number;
+  cost?: number;
 }
 
 export default function ReceivingPage() {
@@ -54,6 +55,8 @@ export default function ReceivingPage() {
   const [receiveItems, setReceiveItems] = useState<ReceiveItem[]>([]);
   const [currentItemId, setCurrentItemId] = useState("");
   const [currentQty, setCurrentQty] = useState("");
+  const [currentCost, setCurrentCost] = useState("");
+  const [updateItemCosts, setUpdateItemCosts] = useState(true);
   const [saving, setSaving] = useState(false);
   
   useEffect(() => {
@@ -87,13 +90,20 @@ export default function ReceivingPage() {
     const item = allItems.find(i => i.id === currentItemId);
     if (!item) return;
     
-    setReceiveItems([...receiveItems, {
+    const newItem: ReceiveItem = {
       itemId: currentItemId,
       itemName: item.name,
       quantity: parseFloat(currentQty),
-    }]);
+    };
+    
+    if (currentCost) {
+      newItem.cost = parseFloat(currentCost);
+    }
+    
+    setReceiveItems([...receiveItems, newItem]);
     setCurrentItemId("");
     setCurrentQty("");
+    setCurrentCost("");
   };
   
   const removeItem = (idx: number) => {
@@ -112,12 +122,14 @@ export default function ReceivingPage() {
           vendorId: vendorId || null,
           items: receiveItems,
           notes,
+          updateItemCosts,
         }),
       });
       setModalOpen(false);
       setVendorId("");
       setNotes("");
       setReceiveItems([]);
+      setCurrentCost("");
       fetchData();
     } catch (err) {
       console.error("Failed to create receiving log:", err);
@@ -271,8 +283,8 @@ export default function ReceivingPage() {
           {/* Add Items */}
           <div>
             <label className="block text-sm font-medium text-gray-400 mb-1">Add Items</label>
-            <div className="flex gap-2">
-              <div className="flex-1">
+            <div className="flex gap-2 flex-wrap">
+              <div className="flex-1 min-w-[200px]">
                 <SearchableItemSelect
                   items={allItems}
                   selectedId={currentItemId}
@@ -285,12 +297,21 @@ export default function ReceivingPage() {
                 value={currentQty}
                 onChange={(e) => setCurrentQty(e.target.value)}
                 placeholder="Qty"
+                className="w-20"
+              />
+              <Input
+                type="number"
+                step="0.01"
+                value={currentCost}
+                onChange={(e) => setCurrentCost(e.target.value)}
+                placeholder="Cost $"
                 className="w-24"
               />
               <Button onClick={addItem} disabled={!currentItemId || !currentQty}>
                 Add
               </Button>
             </div>
+            <p className="text-xs text-gray-500 mt-1">Cost is per unit (optional)</p>
           </div>
           
           {/* Items List */}
@@ -299,8 +320,11 @@ export default function ReceivingPage() {
               {receiveItems.map((item, idx) => (
                 <div key={idx} className="p-2 flex items-center justify-between">
                   <span>{item.itemName}</span>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-3">
                     <span className="text-green-400">+{item.quantity}</span>
+                    {item.cost !== undefined && (
+                      <span className="text-blue-400">${item.cost.toFixed(2)}/ea</span>
+                    )}
                     <button onClick={() => removeItem(idx)} className="text-red-400 hover:text-red-300">
                       <X className="h-4 w-4" />
                     </button>
@@ -308,6 +332,19 @@ export default function ReceivingPage() {
                 </div>
               ))}
             </div>
+          )}
+          
+          {/* Update Item Costs Option */}
+          {receiveItems.some(i => i.cost !== undefined) && (
+            <label className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={updateItemCosts}
+                onChange={(e) => setUpdateItemCosts(e.target.checked)}
+                className="rounded bg-gray-800 border-gray-600"
+              />
+              Update item costs in inventory with these values
+            </label>
           )}
           
           <div>
@@ -356,7 +393,12 @@ export default function ReceivingPage() {
               {parseItemsJson(detailLog.itemsJson).map((item, idx) => (
                 <div key={idx} className="p-3 flex items-center justify-between">
                   <span>{item.itemName}</span>
-                  <span className="text-green-400 font-medium">+{item.quantity}</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-green-400 font-medium">+{item.quantity}</span>
+                    {item.cost !== undefined && (
+                      <span className="text-blue-400">${item.cost.toFixed(2)}/ea</span>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

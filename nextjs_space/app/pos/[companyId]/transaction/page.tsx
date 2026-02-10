@@ -19,6 +19,10 @@ import {
   Search,
   Gift,
   X,
+  User,
+  Phone,
+  CreditCard,
+  Heart,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -47,6 +51,21 @@ interface SearchItem {
   category: { taxRate: number } | null;
 }
 
+interface Customer {
+  id: string;
+  phone: string;
+  name: string;
+  loyaltyPoints: number;
+  totalSpent: number;
+  visitCount: number;
+}
+
+interface AppliedGiftCard {
+  barcode: string;
+  amount: number;
+  giftCardId: string;
+}
+
 export default function TransactionPage() {
   const params = useParams();
   const router = useRouter();
@@ -65,6 +84,16 @@ export default function TransactionPage() {
   
   // Store credit state
   const [appliedStoreCredits, setAppliedStoreCredits] = useState<AppliedStoreCredit[]>([]);
+  
+  // Gift card state
+  const [appliedGiftCards, setAppliedGiftCards] = useState<AppliedGiftCard[]>([]);
+  
+  // Customer state
+  const [customer, setCustomer] = useState<Customer | null>(null);
+  const [customerModalOpen, setCustomerModalOpen] = useState(false);
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [customerName, setCustomerName] = useState("");
+  const [customerLoading, setCustomerLoading] = useState(false);
   
   // Search dropdown for manual typing
   const [searchResults, setSearchResults] = useState<SearchItem[]>([]);
@@ -152,6 +181,13 @@ export default function TransactionPage() {
         return;
       }
       
+      // Check if this is a gift card barcode (starts with GC-)
+      if (barcodeValue.toUpperCase().startsWith("GC-")) {
+        await lookupGiftCard(barcodeValue);
+        setBarcode("");
+        return;
+      }
+      
       const res = await fetch(
         `/api/items/barcode/${encodeURIComponent(barcodeValue)}?companyId=${companyId}`
       );
@@ -179,6 +215,123 @@ export default function TransactionPage() {
     } finally {
       setLoading(false);
       barcodeInputRef.current?.focus();
+    }
+  };
+  
+  const lookupGiftCard = async (gcBarcode: string) => {
+    try {
+      const res = await fetch(`/api/gift-cards?barcode=${encodeURIComponent(gcBarcode)}`);
+      
+      if (!res.ok) {
+        setError("Gift card not found");
+        return;
+      }
+      
+      const giftCard = await res.json();
+      
+      // Check company match
+      if (giftCard.companyId !== companyId) {
+        setError("This gift card is for a different store");
+        return;
+      }
+      
+      // If not yet purchased (first scan) - add as an item to sell
+      if (!giftCard.purchasedAt) {
+        // Add gift card as a cart item
+        const gcItem: CartItem = {
+          id: `gc-${giftCard.id}`,
+          itemId: giftCard.id,
+          barcode: giftCard.barcode,
+          name: `Gift Card (${formatCurrency(giftCard.initialValue)})`,
+          price: giftCard.initialValue,
+          quantity: 1,
+          isWeightPriced: false,
+          taxRate: 0, // Gift cards are typically not taxed
+        };
+        setCart(prev => [...prev, gcItem]);
+        setError("");
+        return;
+      }
+      
+      // If already purchased - check if we can apply balance
+      if (giftCard.balance <= 0) {
+        setError("This gift card has no remaining balance");
+        return;
+      }
+      
+      // Check if already applied
+      if (appliedGiftCards.some(gc => gc.barcode.toUpperCase() === gcBarcode.toUpperCase())) {
+        setError("Gift card already applied to this transaction");
+        return;
+      }
+      
+      // Apply gift card balance
+      setAppliedGiftCards(prev => [...prev, {
+        barcode: giftCard.barcode,
+        amount: giftCard.balance,
+        giftCardId: giftCard.id,
+      }]);
+      setError("");
+    } catch (err) {
+      console.error("Gift card lookup error:", err);
+      setError("Failed to lookup gift card");
+    }
+  };
+  
+  const removeGiftCard = (gcBarcode: string) => {
+    setAppliedGiftCards(prev => prev.filter(gc => gc.barcode !== gcBarcode));
+  };
+  
+  const lookupCustomer = async () => {
+    if (!customerPhone.trim()) return;
+    
+    setCustomerLoading(true);
+    try {
+      const res = await fetch(`/api/customers?companyId=${companyId}&phone=${encodeURIComponent(customerPhone)}`);
+      
+      if (res.ok) {
+        const data = await res.json();
+        setCustomer(data);
+        setCustomerModalOpen(false);
+        setCustomerPhone("");
+        setCustomerName("");
+      } else {
+        // Customer not found - offer to create
+        setCustomer(null);
+      }
+    } catch (err) {
+      console.error("Customer lookup error:", err);
+    } finally {
+      setCustomerLoading(false);
+    }
+  };
+  
+  const createCustomer = async () => {
+    if (!customerPhone.trim() || !customerName.trim()) return;
+    
+    setCustomerLoading(true);
+    try {
+      const res = await fetch("/api/customers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId,
+          phone: customerPhone,
+          name: customerName,
+        }),
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        setCustomer(data);
+        setCustomerModalOpen(false);
+        setCustomerPhone("");
+        setCustomerName("");
+      }
+    } catch (err) {
+      console.error("Create customer error:", err);
+    } finally {
+      setCustomerLoading(false);
     }
   };
   
@@ -311,13 +464,16 @@ export default function TransactionPage() {
     });
     
     const storeCreditTotal = appliedStoreCredits.reduce((sum, sc) => sum + sc.amount, 0);
+    const giftCardTotal = appliedGiftCards.reduce((sum, gc) => sum + gc.amount, 0);
     const grossTotal = subtotal + tax;
-    const total = Math.max(0, grossTotal - storeCreditTotal);
+    const creditsTotal = storeCreditTotal + giftCardTotal;
+    const total = Math.max(0, grossTotal - creditsTotal);
     
     return {
       subtotal: Math.round(subtotal * 100) / 100,
       tax: Math.round(tax * 100) / 100,
       storeCreditTotal: Math.round(storeCreditTotal * 100) / 100,
+      giftCardTotal: Math.round(giftCardTotal * 100) / 100,
       grossTotal: Math.round(grossTotal * 100) / 100,
       total: Math.round(total * 100) / 100,
     };
@@ -341,6 +497,8 @@ export default function TransactionPage() {
         employeeId: employee?.id,
         shiftId,
         appliedStoreCredits,
+        appliedGiftCards,
+        customer: customer ? { id: customer.id, name: customer.name, phone: customer.phone, loyaltyPoints: customer.loyaltyPoints } : null,
       })
     );
     
@@ -461,6 +619,24 @@ export default function TransactionPage() {
           <ArrowLeft className="h-4 w-4 mr-2" />
           Back
         </Button>
+        
+        {/* Customer Button */}
+        <button
+          onClick={() => setCustomerModalOpen(true)}
+          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors ${
+            customer 
+              ? 'bg-green-900/30 border-green-600/50 text-green-400' 
+              : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'
+          }`}
+        >
+          <User className="h-4 w-4" />
+          {customer ? (
+            <span>{customer.name} • {customer.loyaltyPoints} pts</span>
+          ) : (
+            <span>Add Customer</span>
+          )}
+        </button>
+        
         <div className="text-right">
           <p className="font-mono text-sm text-gray-400">{transactionId}</p>
           <p className="text-xs text-gray-500">
@@ -662,13 +838,37 @@ export default function TransactionPage() {
                     ))}
                   </div>
                 )}
+                
+                {/* Applied Gift Cards */}
+                {appliedGiftCards.length > 0 && (
+                  <div className="border-t border-pos-border pt-2 mt-2">
+                    <p className="text-xs text-indigo-400 flex items-center gap-1 mb-2">
+                      <CreditCard className="h-3 w-3" />
+                      Gift Cards Applied
+                    </p>
+                    {appliedGiftCards.map((gc) => (
+                      <div key={gc.barcode} className="flex justify-between items-center group">
+                        <span className="text-indigo-400 text-xs font-mono">{gc.barcode}</span>
+                        <div className="flex items-center gap-1">
+                          <span className="text-indigo-400">-{formatCurrency(gc.amount)}</span>
+                          <button
+                            onClick={() => removeGiftCard(gc.barcode)}
+                            className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 transition-opacity"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
             
             <div className="border-t border-pos-border pt-4 mt-4">
-              {appliedStoreCredits.length > 0 && (
+              {(appliedStoreCredits.length > 0 || appliedGiftCards.length > 0) && (
                 <div className="flex justify-between text-sm text-gray-400 mb-2">
-                  <span>Before Credit</span>
+                  <span>Before Credits</span>
                   <span>{formatCurrency(totals?.grossTotal ?? 0)}</span>
                 </div>
               )}
@@ -730,6 +930,124 @@ export default function TransactionPage() {
           >
             Add to Cart
           </Button>
+        </div>
+      </Modal>
+      
+      {/* Customer lookup modal */}
+      <Modal
+        isOpen={customerModalOpen}
+        onClose={() => {
+          setCustomerModalOpen(false);
+          setCustomerPhone("");
+          setCustomerName("");
+        }}
+        title="Customer Lookup"
+      >
+        <div className="space-y-4">
+          {customer ? (
+            // Customer found - show info
+            <div className="space-y-4">
+              <div className="p-4 bg-green-900/30 border border-green-600/50 rounded-lg">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="p-2 bg-green-600/20 rounded-full">
+                    <User className="h-6 w-6 text-green-400" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-lg">{customer.name}</p>
+                    <p className="text-sm text-gray-400">{customer.phone}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-4 text-center pt-3 border-t border-green-700/50">
+                  <div>
+                    <p className="text-2xl font-bold text-green-400">{customer.loyaltyPoints}</p>
+                    <p className="text-xs text-gray-400">Points</p>
+                  </div>
+                  <div>
+                    <p className="text-lg font-semibold">{formatCurrency(customer.totalSpent)}</p>
+                    <p className="text-xs text-gray-400">Total Spent</p>
+                  </div>
+                  <div>
+                    <p className="text-lg font-semibold">{customer.visitCount}</p>
+                    <p className="text-xs text-gray-400">Visits</p>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => setCustomer(null)}
+                  className="flex-1 border-gray-600"
+                >
+                  Remove Customer
+                </Button>
+                <Button
+                  onClick={() => setCustomerModalOpen(false)}
+                  className="flex-1"
+                >
+                  Done
+                </Button>
+              </div>
+            </div>
+          ) : (
+            // Customer lookup form
+            <>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Phone Number</label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+                    <Input
+                      value={customerPhone}
+                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && lookupCustomer()}
+                      placeholder="(555) 123-4567"
+                      className="pl-10 bg-gray-800 border-gray-600"
+                    />
+                  </div>
+                  <Button onClick={lookupCustomer} disabled={customerLoading || !customerPhone.trim()}>
+                    {customerLoading ? <LoadingSpinner size="sm" /> : "Find"}
+                  </Button>
+                </div>
+              </div>
+              
+              {customerPhone && !customerLoading && (
+                <div className="border-t border-gray-700 pt-4">
+                  <p className="text-sm text-gray-400 mb-3">Customer not found? Create a new one:</p>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm text-gray-400 mb-1">Name</label>
+                      <Input
+                        value={customerName}
+                        onChange={(e) => setCustomerName(e.target.value)}
+                        placeholder="John Smith"
+                        className="bg-gray-800 border-gray-600"
+                      />
+                    </div>
+                    <Button
+                      onClick={createCustomer}
+                      disabled={!customerName.trim() || customerLoading}
+                      className="w-full"
+                    >
+                      Create Customer
+                    </Button>
+                  </div>
+                </div>
+              )}
+              
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setCustomerModalOpen(false);
+                  setCustomerPhone("");
+                  setCustomerName("");
+                }}
+                className="w-full text-gray-400"
+              >
+                Cancel
+              </Button>
+            </>
+          )}
         </div>
       </Modal>
     </div>

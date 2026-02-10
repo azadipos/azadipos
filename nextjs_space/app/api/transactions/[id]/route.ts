@@ -58,11 +58,12 @@ export async function DELETE(
     const { searchParams } = new URL(request.url);
     const authorizedByEmployeeId = searchParams.get("authorizedBy");
     const reason = searchParams.get("reason") || "Deleted by admin";
+    const source = searchParams.get("source") || "admin"; // "admin" or "pos"
     
     // Get the transaction first
     const transaction = await prisma.transaction.findUnique({
       where: { id: params.id },
-      include: { items: true },
+      include: { items: true, employee: true },
     });
     
     if (!transaction) {
@@ -79,8 +80,9 @@ export async function DELETE(
       },
     });
     
-    // Restore inventory for voided transaction items (if it was a sale)
-    if (transaction.type === "sale") {
+    // ONLY restore inventory for POS voids/refunds, NOT admin deletes
+    // Admin deletes are for audit cleanup, not operational voids
+    if (source === "pos" && transaction.type === "sale") {
       for (const item of transaction.items) {
         await prisma.item.update({
           where: { id: item.itemId },
@@ -90,6 +92,27 @@ export async function DELETE(
         });
       }
     }
+    
+    // Create audit trail entry
+    await prisma.auditTrail.create({
+      data: {
+        companyId: transaction.companyId,
+        action: source === "admin" ? "DELETE_TRANSACTION" : "VOID",
+        entityType: "transaction",
+        entityId: transaction.id,
+        description: `Transaction #${transaction.transactionNumber} ${source === "admin" ? 'deleted' : 'voided'}: ${reason}`,
+        employeeId: transaction.employeeId,
+        employeeName: transaction.employee?.name || null,
+        authorizedById: authorizedByEmployeeId,
+        metadata: JSON.stringify({
+          total: transaction.total,
+          type: transaction.type,
+          source,
+          reason,
+          itemCount: transaction.items.length,
+        }),
+      },
+    });
     
     return NextResponse.json({ 
       success: true, 

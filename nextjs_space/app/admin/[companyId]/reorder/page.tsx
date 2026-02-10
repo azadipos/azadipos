@@ -6,8 +6,15 @@ import { AdminLayout } from "@/components/admin-layout";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { formatCurrency } from "@/lib/helpers";
-import { Package, AlertTriangle, Truck, TrendingDown, CheckCircle2 } from "lucide-react";
+import { Package, AlertTriangle, Truck, TrendingDown, CheckCircle2, DollarSign, Info } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+
+interface CostHistory {
+  vendorId: string | null;
+  vendorName: string | null;
+  cost: number;
+  date: Date;
+}
 
 interface ReorderItem {
   id: string;
@@ -17,10 +24,13 @@ interface ReorderItem {
   reorderLevel: number;
   reorderQty: number;
   soldSinceLastIntake: number;
+  cost: number;
   vendor: {
     id: string;
     name: string;
   } | null;
+  costHistory?: CostHistory[];
+  cheaperVendor?: { vendorName: string; cost: number; savings: number } | null;
 }
 
 interface GroupedItems {
@@ -46,7 +56,46 @@ export default function ReorderPage() {
     try {
       const res = await fetch(`/api/items/reorder?companyId=${companyId}`);
       const data = await res.json();
-      setItems(data ?? []);
+      
+      // For each item, fetch cost history and find cheaper vendors
+      const itemsWithCostData = await Promise.all(
+        (data ?? []).map(async (item: ReorderItem) => {
+          try {
+            const costRes = await fetch(`/api/receiving?companyId=${companyId}&itemId=${item.id}`, {
+              method: "PUT", // PUT is used for cost history endpoint
+            });
+            const costHistory = await costRes.json();
+            
+            // Find cheapest vendor from recent receiving logs (different from current vendor)
+            let cheaperVendor: ReorderItem["cheaperVendor"] = null;
+            if (Array.isArray(costHistory) && costHistory.length > 0 && item.cost > 0) {
+              // Find the lowest cost from a different vendor
+              const otherVendorCosts = costHistory.filter(
+                (ch: CostHistory) => ch.vendorId && ch.vendorId !== item.vendor?.id && ch.cost < item.cost
+              );
+              
+              if (otherVendorCosts.length > 0) {
+                // Get the cheapest one
+                const cheapest = otherVendorCosts.reduce(
+                  (min: CostHistory, ch: CostHistory) => ch.cost < min.cost ? ch : min,
+                  otherVendorCosts[0]
+                );
+                cheaperVendor = {
+                  vendorName: cheapest.vendorName || "Unknown",
+                  cost: cheapest.cost,
+                  savings: item.cost - cheapest.cost,
+                };
+              }
+            }
+            
+            return { ...item, costHistory, cheaperVendor };
+          } catch {
+            return item;
+          }
+        })
+      );
+      
+      setItems(itemsWithCostData);
     } catch (err) {
       console.error("Failed to fetch reorder items:", err);
     } finally {
@@ -222,41 +271,61 @@ export default function ReorderPage() {
                         key={item.id}
                         initial={{ opacity: 1, height: "auto" }}
                         exit={{ opacity: 0, height: 0 }}
-                        className={`p-4 flex items-center gap-4 hover:bg-gray-800/50 transition-colors ${
+                        className={`p-4 hover:bg-gray-800/50 transition-colors ${
                           selectedItems.has(item.id) ? "bg-blue-900/20" : ""
                         }`}
                       >
-                        <input
-                          type="checkbox"
-                          checked={selectedItems.has(item.id)}
-                          onChange={() => toggleItem(item.id)}
-                          className="h-5 w-5 rounded border-gray-600 bg-gray-800 text-blue-600"
-                        />
-                        
-                        <div className="flex-1">
-                          <p className="font-medium">{item.name}</p>
-                          <p className="text-sm text-gray-500 font-mono">{item.barcode}</p>
+                        <div className="flex items-center gap-4">
+                          <input
+                            type="checkbox"
+                            checked={selectedItems.has(item.id)}
+                            onChange={() => toggleItem(item.id)}
+                            className="h-5 w-5 rounded border-gray-600 bg-gray-800 text-blue-600"
+                          />
+                          
+                          <div className="flex-1">
+                            <p className="font-medium">{item.name}</p>
+                            <p className="text-sm text-gray-500 font-mono">{item.barcode}</p>
+                          </div>
+                          
+                          <div className="grid grid-cols-4 gap-6 text-center">
+                            <div>
+                              <p className="text-xs text-gray-500">Current</p>
+                              <p className="font-bold text-red-400">{item.currentStock}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-500">Reorder At</p>
+                              <p className="font-medium text-yellow-400">{item.reorderLevel}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-500">Order Qty</p>
+                              <p className="font-medium text-green-400">{item.reorderQty}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-500">Unit Cost</p>
+                              <p className="font-medium text-blue-400">
+                                {item.cost > 0 ? formatCurrency(item.cost) : "N/A"}
+                              </p>
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center gap-2 text-sm text-gray-400 w-28">
+                            <TrendingDown className="h-4 w-4 flex-shrink-0" />
+                            <span>{item.soldSinceLastIntake} (30d)</span>
+                          </div>
                         </div>
                         
-                        <div className="grid grid-cols-3 gap-6 text-center">
-                          <div>
-                            <p className="text-xs text-gray-500">Current</p>
-                            <p className="font-bold text-red-400">{item.currentStock}</p>
+                        {/* Cheaper Vendor Alert */}
+                        {item.cheaperVendor && (
+                          <div className="mt-3 ml-9 p-2 bg-green-900/30 border border-green-700/50 rounded-lg flex items-center gap-2 text-sm">
+                            <DollarSign className="h-4 w-4 text-green-400" />
+                            <span className="text-green-300">
+                              <strong>{item.cheaperVendor.vendorName}</strong> has this at{" "}
+                              <strong>{formatCurrency(item.cheaperVendor.cost)}</strong>/ea
+                              {" "}(save {formatCurrency(item.cheaperVendor.savings)} per unit)
+                            </span>
                           </div>
-                          <div>
-                            <p className="text-xs text-gray-500">Reorder At</p>
-                            <p className="font-medium text-yellow-400">{item.reorderLevel}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-500">Order Qty</p>
-                            <p className="font-medium text-green-400">{item.reorderQty}</p>
-                          </div>
-                        </div>
-                        
-                        <div className="flex items-center gap-2 text-sm text-gray-400">
-                          <TrendingDown className="h-4 w-4" />
-                          <span>{item.soldSinceLastIntake} sold (30d)</span>
-                        </div>
+                        )}
                       </motion.div>
                     ))}
                   </AnimatePresence>

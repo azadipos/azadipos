@@ -3,7 +3,6 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 
-// Redeem/use gift card balance
 export async function POST(req: NextRequest) {
   try {
     const data = await req.json();
@@ -21,45 +20,38 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Gift card not found" }, { status: 404 });
     }
     
+    if (!giftCard.purchasedAt) {
+      return NextResponse.json({ error: "Gift card not yet activated" }, { status: 400 });
+    }
+    
     if (!giftCard.isActive) {
       return NextResponse.json({ error: "Gift card is inactive" }, { status: 400 });
     }
     
-    if (!giftCard.purchasedAt) {
-      return NextResponse.json({ error: "Gift card has not been activated yet" }, { status: 400 });
-    }
+    const redeemAmount = Math.min(parseFloat(String(amount)), giftCard.balance);
+    const newBalance = Math.max(0, giftCard.balance - redeemAmount);
     
-    const amountToRedeem = Math.min(parseFloat(amount), giftCard.balance);
-    
-    if (amountToRedeem <= 0) {
-      return NextResponse.json({ error: "No balance remaining on gift card" }, { status: 400 });
-    }
-    
-    const newBalance = Math.round((giftCard.balance - amountToRedeem) * 100) / 100;
-    
-    // Update gift card balance and create usage record
-    const [updated] = await Promise.all([
+    // Update balance and create usage record
+    const [updatedCard] = await prisma.$transaction([
       prisma.giftCard.update({
         where: { barcode },
-        data: {
-          balance: newBalance,
-          isActive: newBalance > 0,
-        },
+        data: { balance: newBalance },
       }),
       prisma.giftCardUsage.create({
         data: {
           giftCardId: giftCard.id,
           transactionId: transactionId || null,
-          amount: amountToRedeem,
+          amount: redeemAmount,
           balanceAfter: newBalance,
         },
       }),
     ]);
     
     return NextResponse.json({
-      ...updated,
-      amountRedeemed: amountToRedeem,
+      success: true,
+      redeemedAmount: redeemAmount,
       remainingBalance: newBalance,
+      giftCard: updatedCard,
     });
   } catch (error) {
     console.error("Error redeeming gift card:", error);

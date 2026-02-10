@@ -8,36 +8,30 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const companyId = searchParams.get("companyId");
     const phone = searchParams.get("phone");
-    const search = searchParams.get("search");
     
     if (!companyId) {
       return NextResponse.json({ error: "companyId required" }, { status: 400 });
     }
     
-    // Lookup by phone number
     if (phone) {
+      // Lookup customer by phone
       const customer = await prisma.customer.findUnique({
-        where: { companyId_phone: { companyId, phone } },
+        where: {
+          companyId_phone: { companyId, phone },
+        },
       });
+      
       if (!customer) {
         return NextResponse.json({ error: "Customer not found" }, { status: 404 });
       }
+      
       return NextResponse.json(customer);
     }
     
-    // Search customers
-    const where: any = { companyId };
-    if (search) {
-      where.OR = [
-        { phone: { contains: search } },
-        { name: { contains: search, mode: "insensitive" } },
-      ];
-    }
-    
+    // Return all customers for the company
     const customers = await prisma.customer.findMany({
-      where,
+      where: { companyId },
       orderBy: { createdAt: "desc" },
-      take: 100,
     });
     
     return NextResponse.json(customers);
@@ -53,16 +47,18 @@ export async function POST(req: NextRequest) {
     const { companyId, phone, name, email } = data;
     
     if (!companyId || !phone || !name) {
-      return NextResponse.json({ error: "companyId, phone, and name required" }, { status: 400 });
+      return NextResponse.json({ error: "companyId, phone, and name are required" }, { status: 400 });
     }
     
     // Check if customer already exists
     const existing = await prisma.customer.findUnique({
-      where: { companyId_phone: { companyId, phone } },
+      where: {
+        companyId_phone: { companyId, phone },
+      },
     });
     
     if (existing) {
-      return NextResponse.json(existing);
+      return NextResponse.json({ error: "Customer with this phone already exists" }, { status: 409 });
     }
     
     const customer = await prisma.customer.create({
