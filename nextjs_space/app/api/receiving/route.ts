@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const data = await req.json();
-    const { companyId, vendorId, items, notes, updateItemCosts } = data;
+    const { companyId, vendorId, items, notes } = data;
     
     if (!companyId || !items || !Array.isArray(items)) {
       return NextResponse.json({ error: "companyId and items array are required" }, { status: 400 });
@@ -49,20 +49,20 @@ export async function POST(req: NextRequest) {
       },
     });
     
-    // Update inventory quantities and optionally costs
+    // Update inventory quantities and handle per-item cost/vendor update decisions
     for (const item of items) {
       if (item.itemId && item.quantity) {
         const updateData: any = {
           quantityOnHand: { increment: parseFloat(item.quantity) },
         };
         
-        // Update item cost if provided and flag is set
-        if (updateItemCosts && item.cost !== undefined && item.cost !== null) {
+        // Only update cost if the admin specifically approved it for this item
+        if (item.updateCost && item.cost !== undefined && item.cost !== null) {
           updateData.cost = parseFloat(item.cost);
         }
         
-        // Update vendor if provided and different
-        if (vendorId) {
+        // Only update vendor if the admin specifically approved it for this item
+        if (item.updateVendor && vendorId) {
           updateData.vendorId = vendorId;
         }
         

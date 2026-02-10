@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/modal";
 import { LoadingSpinner } from "@/components/loading-spinner";
-import { ClipboardList, Calendar, Trash2, Filter, AlertTriangle, ChevronLeft, ChevronRight, FileText, RefreshCw } from "lucide-react";
+import { ClipboardList, Calendar, Trash2, Filter, AlertTriangle, ChevronLeft, ChevronRight, FileText, RefreshCw, Scale, ShieldAlert } from "lucide-react";
 import { formatCurrency } from "@/lib/helpers";
 import { motion } from "framer-motion";
 
@@ -331,6 +331,35 @@ export default function AuditTrailPage() {
                   {deleteMode === "single"
                     ? "This audit entry will be permanently deleted."
                     : "All entries before the selected date will be permanently deleted."}
+                </p>
+              </div>
+            </div>
+          </div>
+          
+          {/* Legal Compliance Disclaimer */}
+          <div className="p-4 bg-blue-900/20 border border-blue-700/30 rounded-lg">
+            <div className="flex items-start gap-3">
+              <Scale className="h-5 w-5 text-blue-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-blue-200 font-medium">Legal Compliance Notice</p>
+                <p className="text-blue-200/70 text-sm">
+                  Audit log deletion may only be performed for valid accounting and operational reasons. 
+                  Please ensure you have researched and comply with applicable laws and regulations.
+                </p>
+              </div>
+            </div>
+          </div>
+          
+          {/* Audit Retention Warning */}
+          <div className="p-4 bg-amber-900/20 border border-amber-700/30 rounded-lg">
+            <div className="flex items-start gap-3">
+              <ShieldAlert className="h-5 w-5 text-amber-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-amber-200 font-medium">Audit Log Retention Requirements</p>
+                <p className="text-amber-200/70 text-sm">
+                  Many jurisdictions require businesses to retain audit trails for specific periods (often 3-7 years or longer). 
+                  Audit trails may <strong>only be deleted after the required retention period</strong> or <strong>never</strong>, depending on applicable laws. 
+                  Consult with legal/accounting professionals before deleting audit records.
                 </p>
               </div>
             </div>

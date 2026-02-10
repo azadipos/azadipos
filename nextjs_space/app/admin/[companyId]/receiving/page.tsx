@@ -8,8 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/modal";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { SearchableItemSelect } from "@/components/searchable-item-select";
-import { ClipboardList, Plus, Trash2, Calendar, Building2, Package, X } from "lucide-react";
+import { ClipboardList, Plus, Trash2, Calendar, Building2, Package, X, AlertTriangle, DollarSign, ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
+import { formatCurrency } from "@/lib/helpers";
 
 interface ReceivingLog {
   id: string;
@@ -29,6 +30,9 @@ interface Item {
   id: string;
   name: string;
   barcode: string;
+  cost: number;
+  vendorId: string | null;
+  vendor: { id: string; name: string } | null;
 }
 
 interface ReceiveItem {
@@ -36,6 +40,10 @@ interface ReceiveItem {
   itemName: string;
   quantity: number;
   cost?: number;
+  currentCost?: number;
+  currentVendorName?: string;
+  updateCost?: boolean; // Whether to update this item's cost in inventory
+  updateVendor?: boolean; // Whether to update this item's vendor in inventory
 }
 
 export default function ReceivingPage() {
@@ -90,20 +98,43 @@ export default function ReceivingPage() {
     const item = allItems.find(i => i.id === currentItemId);
     if (!item) return;
     
+    const newCost = currentCost ? parseFloat(currentCost) : undefined;
+    const selectedVendor = vendors.find(v => v.id === vendorId);
+    
+    // Check if cost or vendor is different
+    const hasCostDifference = newCost !== undefined && item.cost > 0 && Math.abs(newCost - item.cost) > 0.001;
+    const hasVendorDifference = vendorId && item.vendorId && vendorId !== item.vendorId;
+    
     const newItem: ReceiveItem = {
       itemId: currentItemId,
       itemName: item.name,
       quantity: parseFloat(currentQty),
+      cost: newCost,
+      currentCost: item.cost,
+      currentVendorName: item.vendor?.name || undefined,
+      // Default to updating cost if there's a difference (admin can override)
+      updateCost: hasCostDifference,
+      updateVendor: hasVendorDifference || false,
     };
-    
-    if (currentCost) {
-      newItem.cost = parseFloat(currentCost);
-    }
     
     setReceiveItems([...receiveItems, newItem]);
     setCurrentItemId("");
     setCurrentQty("");
     setCurrentCost("");
+  };
+  
+  // Toggle whether to update a specific item's cost
+  const toggleUpdateCost = (idx: number) => {
+    setReceiveItems(prev => prev.map((item, i) => 
+      i === idx ? { ...item, updateCost: !item.updateCost } : item
+    ));
+  };
+  
+  // Toggle whether to update a specific item's vendor
+  const toggleUpdateVendor = (idx: number) => {
+    setReceiveItems(prev => prev.map((item, i) => 
+      i === idx ? { ...item, updateVendor: !item.updateVendor } : item
+    ));
   };
   
   const removeItem = (idx: number) => {
@@ -114,15 +145,24 @@ export default function ReceivingPage() {
     if (receiveItems.length === 0) return;
     setSaving(true);
     try {
+      // Prepare items with individual update decisions
+      const itemsForApi = receiveItems.map(item => ({
+        itemId: item.itemId,
+        itemName: item.itemName,
+        quantity: item.quantity,
+        cost: item.cost,
+        updateCost: item.updateCost || false,
+        updateVendor: item.updateVendor || false,
+      }));
+      
       await fetch("/api/receiving", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           companyId,
           vendorId: vendorId || null,
-          items: receiveItems,
+          items: itemsForApi,
           notes,
-          updateItemCosts,
         }),
       });
       setModalOpen(false);
@@ -317,34 +357,77 @@ export default function ReceivingPage() {
           {/* Items List */}
           {receiveItems.length > 0 && (
             <div className="border border-gray-700 rounded-lg divide-y divide-gray-700">
-              {receiveItems.map((item, idx) => (
-                <div key={idx} className="p-2 flex items-center justify-between">
-                  <span>{item.itemName}</span>
-                  <div className="flex items-center gap-3">
-                    <span className="text-green-400">+{item.quantity}</span>
-                    {item.cost !== undefined && (
-                      <span className="text-blue-400">${item.cost.toFixed(2)}/ea</span>
+              {receiveItems.map((item, idx) => {
+                const hasCostDiff = item.cost !== undefined && item.currentCost !== undefined && 
+                                    item.currentCost > 0 && Math.abs(item.cost - item.currentCost) > 0.001;
+                const hasVendorDiff = vendorId && item.currentVendorName && 
+                                      vendors.find(v => v.id === vendorId)?.name !== item.currentVendorName;
+                const selectedVendorName = vendors.find(v => v.id === vendorId)?.name;
+                
+                return (
+                  <div key={idx} className="p-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">{item.itemName}</span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-green-400">+{item.quantity}</span>
+                        {item.cost !== undefined && (
+                          <span className="text-blue-400">{formatCurrency(item.cost)}/ea</span>
+                        )}
+                        <button onClick={() => removeItem(idx)} className="text-red-400 hover:text-red-300">
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                    
+                    {/* Price Difference Alert */}
+                    {hasCostDiff && (
+                      <div className="mt-2 p-2 bg-amber-900/30 border border-amber-700/50 rounded">
+                        <div className="flex items-center gap-2 text-sm text-amber-300">
+                          <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                          <span>
+                            Cost difference: Current <strong>{formatCurrency(item.currentCost!)}</strong>
+                            <ArrowRight className="h-3 w-3 inline mx-1" />
+                            New <strong>{formatCurrency(item.cost!)}</strong>
+                          </span>
+                        </div>
+                        <label className="flex items-center gap-2 text-xs text-amber-200/70 mt-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={item.updateCost || false}
+                            onChange={() => toggleUpdateCost(idx)}
+                            className="rounded bg-gray-800 border-gray-600"
+                          />
+                          Update master item cost to new price
+                        </label>
+                      </div>
                     )}
-                    <button onClick={() => removeItem(idx)} className="text-red-400 hover:text-red-300">
-                      <X className="h-4 w-4" />
-                    </button>
+                    
+                    {/* Vendor Difference Alert */}
+                    {hasVendorDiff && (
+                      <div className="mt-2 p-2 bg-blue-900/30 border border-blue-700/50 rounded">
+                        <div className="flex items-center gap-2 text-sm text-blue-300">
+                          <Building2 className="h-4 w-4 flex-shrink-0" />
+                          <span>
+                            Different vendor: Current <strong>{item.currentVendorName}</strong>
+                            <ArrowRight className="h-3 w-3 inline mx-1" />
+                            New <strong>{selectedVendorName}</strong>
+                          </span>
+                        </div>
+                        <label className="flex items-center gap-2 text-xs text-blue-200/70 mt-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={item.updateVendor || false}
+                            onChange={() => toggleUpdateVendor(idx)}
+                            className="rounded bg-gray-800 border-gray-600"
+                          />
+                          Update master item vendor to new vendor
+                        </label>
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
-          )}
-          
-          {/* Update Item Costs Option */}
-          {receiveItems.some(i => i.cost !== undefined) && (
-            <label className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={updateItemCosts}
-                onChange={(e) => setUpdateItemCosts(e.target.checked)}
-                className="rounded bg-gray-800 border-gray-600"
-              />
-              Update item costs in inventory with these values
-            </label>
           )}
           
           <div>

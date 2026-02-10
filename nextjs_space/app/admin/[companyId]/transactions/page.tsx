@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/modal";
 import { LoadingSpinner } from "@/components/loading-spinner";
-import { Receipt, Calendar, ChevronDown, ChevronUp, Filter, RotateCcw, DollarSign, XCircle, Trash2, AlertTriangle, CheckSquare, Square, CreditCard, Banknote, Gift } from "lucide-react";
+import { Receipt, Calendar, ChevronDown, ChevronUp, Filter, RotateCcw, DollarSign, XCircle, Trash2, AlertTriangle, CheckSquare, Square, CreditCard, Banknote, Gift, Scale } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/helpers";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -626,6 +626,20 @@ export default function TransactionsPage() {
             </div>
           </div>
           
+          {/* Legal Compliance Disclaimer */}
+          <div className="p-4 bg-blue-900/20 border border-blue-700/30 rounded-lg">
+            <div className="flex items-start gap-3">
+              <Scale className="h-5 w-5 text-blue-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-blue-200 font-medium">Legal Compliance Notice</p>
+                <p className="text-blue-200/70 text-sm">
+                  Transaction deletion may only be performed for valid accounting reasons (e.g., test transactions, duplicates, system errors). 
+                  Please ensure you have researched and comply with applicable laws and regulations regarding transaction record retention.
+                </p>
+              </div>
+            </div>
+          </div>
+          
           <div className="p-4 bg-gray-800 rounded-lg">
             <p className="text-sm text-gray-400">Transaction</p>
             <p className="font-mono">{transactionToDelete?.transactionNumber}</p>
@@ -710,6 +724,20 @@ export default function TransactionsPage() {
           <div className="p-3 bg-amber-900/20 border border-amber-700/30 rounded-lg text-sm text-amber-300">
             <strong>Tip:</strong> Be careful when deleting transactions paid with card. 
             Deleting credit card transactions may create accounting discrepancies.
+          </div>
+          
+          {/* Legal Compliance Disclaimer */}
+          <div className="p-4 bg-blue-900/20 border border-blue-700/30 rounded-lg">
+            <div className="flex items-start gap-3">
+              <Scale className="h-5 w-5 text-blue-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-blue-200 font-medium">Legal Compliance Notice</p>
+                <p className="text-blue-200/70 text-sm">
+                  Transaction deletion may only be performed for valid accounting reasons (e.g., test transactions, duplicates, system errors). 
+                  Please ensure you have researched and comply with applicable laws and regulations regarding transaction record retention.
+                </p>
+              </div>
+            </div>
           </div>
           
           <div>

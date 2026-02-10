@@ -95,11 +95,31 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     // Calculate loyalty points earned (if customer loyalty enabled)
     let loyaltyPointsEarned = 0;
     if (customerId && (type || "sale") === "sale") {
-      const loyaltyConfig = await prisma.loyaltyConfig.findUnique({
+      // Get or create loyalty config with defaults
+      let loyaltyConfig = await prisma.loyaltyConfig.findUnique({
         where: { companyId: params.id },
       });
+      
+      // Create default loyalty config if it doesn't exist (enabled by default)
+      if (!loyaltyConfig) {
+        try {
+          loyaltyConfig = await prisma.loyaltyConfig.create({
+            data: {
+              companyId: params.id,
+              pointsPerDollar: 1,
+              isEnabled: true,
+            },
+          });
+        } catch (e) {
+          // Config may have been created by another request, try to fetch it
+          loyaltyConfig = await prisma.loyaltyConfig.findUnique({
+            where: { companyId: params.id },
+          });
+        }
+      }
+      
       if (loyaltyConfig?.isEnabled) {
-        loyaltyPointsEarned = Math.floor(total * loyaltyConfig.pointsPerDollar);
+        loyaltyPointsEarned = Math.floor(total * (loyaltyConfig.pointsPerDollar || 1));
       }
     }
     

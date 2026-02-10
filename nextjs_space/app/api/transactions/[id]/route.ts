@@ -70,6 +70,16 @@ export async function DELETE(
       return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
     }
     
+    // Get authorized employee name if provided
+    let authorizedByName: string | null = null;
+    if (authorizedByEmployeeId) {
+      const authorizedBy = await prisma.employee.findUnique({
+        where: { id: authorizedByEmployeeId },
+        select: { name: true },
+      });
+      authorizedByName = authorizedBy?.name || null;
+    }
+    
     // Instead of hard delete, mark as voided
     const updatedTransaction = await prisma.transaction.update({
       where: { id: params.id },
@@ -93,26 +103,35 @@ export async function DELETE(
       }
     }
     
-    // Create audit trail entry
-    await prisma.auditTrail.create({
-      data: {
-        companyId: transaction.companyId,
-        action: source === "admin" ? "DELETE_TRANSACTION" : "VOID",
-        entityType: "transaction",
-        entityId: transaction.id,
-        description: `Transaction #${transaction.transactionNumber} ${source === "admin" ? 'deleted' : 'voided'}: ${reason}`,
-        employeeId: transaction.employeeId,
-        employeeName: transaction.employee?.name || null,
-        authorizedById: authorizedByEmployeeId,
-        metadata: JSON.stringify({
-          total: transaction.total,
-          type: transaction.type,
-          source,
-          reason,
-          itemCount: transaction.items.length,
-        }),
-      },
-    });
+    // Create audit trail entry - CRITICAL for legal compliance
+    try {
+      await prisma.auditTrail.create({
+        data: {
+          companyId: transaction.companyId,
+          action: source === "admin" ? "DELETE_TRANSACTION" : "VOID",
+          entityType: "transaction",
+          entityId: transaction.id,
+          description: `Transaction #${transaction.transactionNumber} ${source === "admin" ? 'deleted' : 'voided'}: ${reason}`,
+          employeeId: transaction.employeeId,
+          employeeName: transaction.employee?.name || null,
+          authorizedById: authorizedByEmployeeId,
+          authorizedByName: authorizedByName,
+          metadata: JSON.stringify({
+            total: transaction.total,
+            type: transaction.type,
+            paymentMethod: transaction.paymentMethod,
+            source,
+            reason,
+            itemCount: transaction.items.length,
+            transactionNumber: transaction.transactionNumber,
+            transactionDate: transaction.createdAt,
+          }),
+        },
+      });
+    } catch (auditError) {
+      console.error("Failed to create audit trail entry:", auditError);
+      // Don't fail the whole operation, but log the error
+    }
     
     return NextResponse.json({ 
       success: true, 

@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/modal";
 import { LoadingSpinner } from "@/components/loading-spinner";
-import { Heart, Save, Plus, Trash2, Gift, DollarSign, Percent, Info, Settings } from "lucide-react";
-import { formatCurrency } from "@/lib/helpers";
+import { Heart, Save, Plus, Trash2, Gift, DollarSign, Percent, Info, Settings, Users, User, Phone, Receipt, ChevronRight, Search, Calendar } from "lucide-react";
+import { formatCurrency, formatDate } from "@/lib/helpers";
 import { motion } from "framer-motion";
 
 interface RewardTier {
@@ -24,6 +24,27 @@ interface LoyaltyConfig {
   pointsPerDollar: number;
   rewardTiersJson: string | null;
   isEnabled: boolean;
+}
+
+interface Customer {
+  id: string;
+  phone: string;
+  name: string;
+  loyaltyPoints: number;
+  totalSpent: number;
+  visitCount: number;
+  createdAt: string;
+}
+
+interface CustomerTransaction {
+  id: string;
+  transactionNumber: string;
+  type: string;
+  total: number;
+  loyaltyPointsEarned: number;
+  loyaltyPointsRedeemed: number;
+  createdAt: string;
+  employee: { name: string } | null;
 }
 
 export default function LoyaltyPage() {
@@ -46,8 +67,20 @@ export default function LoyaltyPage() {
   const [newTierValue, setNewTierValue] = useState("");
   const [newTierDesc, setNewTierDesc] = useState("");
   
+  // Customer list state
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customersLoading, setCustomersLoading] = useState(true);
+  const [customerSearch, setCustomerSearch] = useState("");
+  
+  // Selected customer for viewing transactions
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [customerTransactions, setCustomerTransactions] = useState<CustomerTransaction[]>([]);
+  const [transactionsLoading, setTransactionsLoading] = useState(false);
+  const [customerModalOpen, setCustomerModalOpen] = useState(false);
+  
   useEffect(() => {
     fetchConfig();
+    fetchCustomers();
   }, [companyId]);
   
   const fetchConfig = async () => {
@@ -72,6 +105,45 @@ export default function LoyaltyPage() {
       setLoading(false);
     }
   };
+  
+  const fetchCustomers = async () => {
+    setCustomersLoading(true);
+    try {
+      const res = await fetch(`/api/customers?companyId=${companyId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setCustomers(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch customers:", err);
+    } finally {
+      setCustomersLoading(false);
+    }
+  };
+  
+  const viewCustomerTransactions = async (customer: Customer) => {
+    setSelectedCustomer(customer);
+    setCustomerModalOpen(true);
+    setTransactionsLoading(true);
+    
+    try {
+      const res = await fetch(`/api/customers/${customer.id}/transactions?companyId=${companyId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setCustomerTransactions(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch customer transactions:", err);
+    } finally {
+      setTransactionsLoading(false);
+    }
+  };
+  
+  // Filter customers by search
+  const filteredCustomers = customers.filter(c => 
+    c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
+    c.phone.includes(customerSearch)
+  );
   
   const handleSave = async () => {
     setSaving(true);
@@ -267,6 +339,77 @@ export default function LoyaltyPage() {
             </div>
           )}
         </div>
+        
+        {/* Registered Customers */}
+        <div className="p-6 bg-gray-800/50 border border-gray-700 rounded-lg">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold flex items-center gap-2">
+              <Users className="h-5 w-5 text-gray-400" />
+              Registered Customers
+              <span className="text-sm font-normal text-gray-500">({customers.length} total)</span>
+            </h3>
+          </div>
+          
+          {/* Search */}
+          <div className="relative mb-4">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Input
+              value={customerSearch}
+              onChange={(e) => setCustomerSearch(e.target.value)}
+              placeholder="Search by name or phone..."
+              className="pl-10 bg-gray-800 border-gray-600"
+            />
+          </div>
+          
+          {customersLoading ? (
+            <div className="flex justify-center py-8">
+              <LoadingSpinner />
+            </div>
+          ) : filteredCustomers.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <Users className="h-10 w-10 mx-auto mb-2 opacity-50" />
+              <p>{customerSearch ? "No matching customers" : "No registered customers yet"}</p>
+              <p className="text-sm">Customers are added from the POS when entering their phone number</p>
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-[400px] overflow-y-auto">
+              {filteredCustomers.map((customer, idx) => (
+                <motion.div
+                  key={customer.id}
+                  initial={{ opacity: 0, y: 5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: idx * 0.02 }}
+                  onClick={() => viewCustomerTransactions(customer)}
+                  className="flex items-center justify-between p-4 bg-gray-900/50 rounded-lg border border-gray-700 hover:bg-gray-800/80 cursor-pointer transition-colors"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="p-2 bg-blue-600/20 rounded-lg text-blue-400">
+                      <User className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="font-medium">{customer.name}</p>
+                      <p className="text-sm text-gray-400 flex items-center gap-1">
+                        <Phone className="h-3 w-3" />
+                        {customer.phone}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-6">
+                    <div className="text-right">
+                      <p className="font-medium text-rose-400">{customer.loyaltyPoints.toLocaleString()} pts</p>
+                      <p className="text-xs text-gray-500">{customer.visitCount} visits</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-medium text-green-400">{formatCurrency(customer.totalSpent)}</p>
+                      <p className="text-xs text-gray-500">total spent</p>
+                    </div>
+                    <ChevronRight className="h-5 w-5 text-gray-500" />
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
       
       {/* Add Tier Modal */}
@@ -332,6 +475,116 @@ export default function LoyaltyPage() {
               Add Tier
             </Button>
           </div>
+        </div>
+      </Modal>
+      
+      {/* Customer Transactions Modal */}
+      <Modal
+        isOpen={customerModalOpen}
+        onClose={() => {
+          setCustomerModalOpen(false);
+          setSelectedCustomer(null);
+          setCustomerTransactions([]);
+        }}
+        title={selectedCustomer ? `${selectedCustomer.name}'s Transactions` : "Customer Transactions"}
+      >
+        <div className="space-y-4">
+          {selectedCustomer && (
+            <div className="p-4 bg-gray-800 rounded-lg">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-blue-600/20 rounded-lg text-blue-400">
+                  <User className="h-6 w-6" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-medium text-lg">{selectedCustomer.name}</p>
+                  <p className="text-sm text-gray-400 flex items-center gap-1">
+                    <Phone className="h-3 w-3" />
+                    {selectedCustomer.phone}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xl font-bold text-rose-400">{selectedCustomer.loyaltyPoints.toLocaleString()}</p>
+                  <p className="text-xs text-gray-500">current points</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-gray-700">
+                <div>
+                  <p className="text-sm text-gray-400">Total Spent</p>
+                  <p className="text-lg font-semibold text-green-400">{formatCurrency(selectedCustomer.totalSpent)}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-400">Total Visits</p>
+                  <p className="text-lg font-semibold">{selectedCustomer.visitCount}</p>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Transaction History */}
+          <div>
+            <h4 className="text-sm font-medium text-gray-400 mb-3 flex items-center gap-2">
+              <Receipt className="h-4 w-4" />
+              Transaction History
+            </h4>
+            
+            {transactionsLoading ? (
+              <div className="flex justify-center py-8">
+                <LoadingSpinner />
+              </div>
+            ) : customerTransactions.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <Receipt className="h-10 w-10 mx-auto mb-2 opacity-50" />
+                <p>No transactions yet</p>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                {customerTransactions.map((txn) => (
+                  <div
+                    key={txn.id}
+                    className="p-3 bg-gray-900/50 rounded-lg border border-gray-700"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-mono text-sm text-gray-400">{txn.transactionNumber}</p>
+                        <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
+                          <Calendar className="h-3 w-3" />
+                          {formatDate(txn.createdAt)}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className={`font-medium ${txn.type === "refund" ? "text-red-400" : "text-green-400"}`}>
+                          {txn.type === "refund" ? "-" : ""}{formatCurrency(Math.abs(txn.total))}
+                        </p>
+                        <div className="text-xs text-gray-500">
+                          {txn.loyaltyPointsEarned > 0 && (
+                            <span className="text-rose-400">+{txn.loyaltyPointsEarned} pts</span>
+                          )}
+                          {txn.loyaltyPointsRedeemed > 0 && (
+                            <span className="text-amber-400 ml-2">-{txn.loyaltyPointsRedeemed} pts</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    {txn.employee && (
+                      <p className="text-xs text-gray-500 mt-1">Employee: {txn.employee.name}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          
+          <Button
+            variant="outline"
+            className="w-full border-gray-600"
+            onClick={() => {
+              setCustomerModalOpen(false);
+              setSelectedCustomer(null);
+              setCustomerTransactions([]);
+            }}
+          >
+            Close
+          </Button>
         </div>
       </Modal>
     </AdminLayout>
