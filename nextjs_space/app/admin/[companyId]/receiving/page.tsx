@@ -1,30 +1,372 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { AdminLayout } from "@/components/admin-layout";
-import { ClipboardList } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Modal } from "@/components/modal";
+import { LoadingSpinner } from "@/components/loading-spinner";
+import { SearchableItemSelect } from "@/components/searchable-item-select";
+import { ClipboardList, Plus, Trash2, Calendar, Building2, Package, X } from "lucide-react";
+import { motion } from "framer-motion";
+
+interface ReceivingLog {
+  id: string;
+  vendorId: string | null;
+  vendor: { id: string; name: string } | null;
+  itemsJson: string | null;
+  invoiceImageUrl: string | null;
+  createdAt: string;
+}
+
+interface Vendor {
+  id: string;
+  name: string;
+}
+
+interface Item {
+  id: string;
+  name: string;
+  barcode: string;
+}
+
+interface ReceiveItem {
+  itemId: string;
+  itemName: string;
+  quantity: number;
+}
 
 export default function ReceivingPage() {
   const params = useParams();
   const companyId = params?.companyId as string;
   
+  const [logs, setLogs] = useState<ReceivingLog[]>([]);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [allItems, setAllItems] = useState<Item[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [detailLog, setDetailLog] = useState<ReceivingLog | null>(null);
+  
+  // Form state
+  const [vendorId, setVendorId] = useState("");
+  const [notes, setNotes] = useState("");
+  const [receiveItems, setReceiveItems] = useState<ReceiveItem[]>([]);
+  const [currentItemId, setCurrentItemId] = useState("");
+  const [currentQty, setCurrentQty] = useState("");
+  const [saving, setSaving] = useState(false);
+  
+  useEffect(() => {
+    fetchData();
+  }, [companyId]);
+  
+  const fetchData = async () => {
+    try {
+      const [logsRes, vendorsRes, itemsRes] = await Promise.all([
+        fetch(`/api/receiving?companyId=${companyId}`),
+        fetch(`/api/companies/${companyId}/vendors`),
+        fetch(`/api/items?companyId=${companyId}`),
+      ]);
+      const [logsData, vendorsData, itemsData] = await Promise.all([
+        logsRes.json(),
+        vendorsRes.json(),
+        itemsRes.json(),
+      ]);
+      setLogs(Array.isArray(logsData) ? logsData : []);
+      setVendors(Array.isArray(vendorsData) ? vendorsData : []);
+      setAllItems(Array.isArray(itemsData) ? itemsData : []);
+    } catch (err) {
+      console.error("Failed to fetch data:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const addItem = () => {
+    if (!currentItemId || !currentQty) return;
+    const item = allItems.find(i => i.id === currentItemId);
+    if (!item) return;
+    
+    setReceiveItems([...receiveItems, {
+      itemId: currentItemId,
+      itemName: item.name,
+      quantity: parseFloat(currentQty),
+    }]);
+    setCurrentItemId("");
+    setCurrentQty("");
+  };
+  
+  const removeItem = (idx: number) => {
+    setReceiveItems(receiveItems.filter((_, i) => i !== idx));
+  };
+  
+  const handleCreate = async () => {
+    if (receiveItems.length === 0) return;
+    setSaving(true);
+    try {
+      await fetch("/api/receiving", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId,
+          vendorId: vendorId || null,
+          items: receiveItems,
+          notes,
+        }),
+      });
+      setModalOpen(false);
+      setVendorId("");
+      setNotes("");
+      setReceiveItems([]);
+      fetchData();
+    } catch (err) {
+      console.error("Failed to create receiving log:", err);
+    } finally {
+      setSaving(false);
+    }
+  };
+  
+  const handleDelete = async (id: string) => {
+    if (!confirm("Delete this receiving record? Note: Inventory quantities will NOT be reverted.")) return;
+    try {
+      await fetch(`/api/receiving/${id}`, { method: "DELETE" });
+      fetchData();
+    } catch (err) {
+      console.error("Failed to delete:", err);
+    }
+  };
+  
+  const parseItemsJson = (json: string | null): ReceiveItem[] => {
+    if (!json) return [];
+    try {
+      return JSON.parse(json);
+    } catch {
+      return [];
+    }
+  };
+  
+  if (loading) {
+    return (
+      <AdminLayout companyId={companyId}>
+        <div className="flex items-center justify-center h-64">
+          <LoadingSpinner />
+        </div>
+      </AdminLayout>
+    );
+  }
+  
   return (
     <AdminLayout companyId={companyId}>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold">Receiving</h1>
-          <p className="text-gray-400">Log incoming inventory shipments</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">Receiving</h1>
+            <p className="text-gray-400">Log incoming inventory shipments</p>
+          </div>
+          <Button onClick={() => setModalOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Log Shipment
+          </Button>
         </div>
         
-        <div className="flex flex-col items-center justify-center py-20 bg-gray-800/50 rounded-lg border border-gray-700">
-          <ClipboardList className="h-16 w-16 text-gray-600 mb-4" />
-          <h2 className="text-xl font-semibold text-gray-400 mb-2">Coming in Phase 3</h2>
-          <p className="text-gray-500 text-center max-w-md">
-            This feature will allow you to scan invoice images, auto-log items received, 
-            and update inventory quantities automatically.
-          </p>
+        {/* Summary */}
+        <div className="bg-gray-800/50 rounded-lg border border-gray-700 p-6">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-green-600/20 rounded-lg">
+              <Package className="h-6 w-6 text-green-400" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-400">Total Shipments</p>
+              <p className="text-2xl font-bold">{logs.length}</p>
+            </div>
+          </div>
+        </div>
+        
+        {/* Receiving Logs List */}
+        <div className="space-y-3">
+          {logs.length === 0 ? (
+            <div className="text-center py-12 bg-gray-800/50 rounded-lg border border-gray-700">
+              <ClipboardList className="h-12 w-12 text-gray-600 mx-auto mb-3" />
+              <p className="text-gray-400">No shipments logged yet</p>
+              <p className="text-sm text-gray-500">Click "Log Shipment" to add one</p>
+            </div>
+          ) : (
+            logs.map((log, idx) => {
+              const items = parseItemsJson(log.itemsJson);
+              return (
+                <motion.div
+                  key={log.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: idx * 0.05 }}
+                  className="bg-gray-800/50 rounded-lg border border-gray-700 p-4"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="p-2 bg-gray-700 rounded-lg">
+                      <Package className="h-5 w-5 text-green-400" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        {log.vendor ? (
+                          <span className="font-medium flex items-center gap-1">
+                            <Building2 className="h-4 w-4 text-gray-400" />
+                            {log.vendor.name}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">No vendor specified</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 mt-1 text-sm text-gray-400">
+                        <span className="flex items-center gap-1">
+                          <Calendar className="h-3 w-3" />
+                          {new Date(log.createdAt).toLocaleDateString()}
+                        </span>
+                        <span>{items.length} item{items.length !== 1 ? 's' : ''}</span>
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setDetailLog(log)}
+                    >
+                      View Items
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDelete(log.id)}
+                      className="text-red-400 hover:text-red-300"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </motion.div>
+              );
+            })
+          )}
         </div>
       </div>
+      
+      {/* Create Modal */}
+      <Modal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title="Log Shipment"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-400 mb-1">Vendor (Optional)</label>
+            <select
+              value={vendorId}
+              onChange={(e) => setVendorId(e.target.value)}
+              className="w-full p-2 bg-gray-900 border border-gray-700 rounded-lg text-white"
+            >
+              <option value="">No specific vendor</option>
+              {vendors.map((v) => (
+                <option key={v.id} value={v.id}>{v.name}</option>
+              ))}
+            </select>
+          </div>
+          
+          {/* Add Items */}
+          <div>
+            <label className="block text-sm font-medium text-gray-400 mb-1">Add Items</label>
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <SearchableItemSelect
+                  items={allItems}
+                  selectedId={currentItemId}
+                  onSelect={setCurrentItemId}
+                  placeholder="Search item..."
+                />
+              </div>
+              <Input
+                type="number"
+                value={currentQty}
+                onChange={(e) => setCurrentQty(e.target.value)}
+                placeholder="Qty"
+                className="w-24"
+              />
+              <Button onClick={addItem} disabled={!currentItemId || !currentQty}>
+                Add
+              </Button>
+            </div>
+          </div>
+          
+          {/* Items List */}
+          {receiveItems.length > 0 && (
+            <div className="border border-gray-700 rounded-lg divide-y divide-gray-700">
+              {receiveItems.map((item, idx) => (
+                <div key={idx} className="p-2 flex items-center justify-between">
+                  <span>{item.itemName}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-green-400">+{item.quantity}</span>
+                    <button onClick={() => removeItem(idx)} className="text-red-400 hover:text-red-300">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-400 mb-1">Notes (Optional)</label>
+            <Input
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Invoice #, PO #, etc."
+            />
+          </div>
+          
+          <div className="flex gap-3 pt-2">
+            <Button
+              variant="ghost"
+              onClick={() => setModalOpen(false)}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreate}
+              disabled={receiveItems.length === 0 || saving}
+              className="flex-1"
+            >
+              {saving ? "Saving..." : "Log Shipment"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+      
+      {/* Detail Modal */}
+      <Modal
+        isOpen={!!detailLog}
+        onClose={() => setDetailLog(null)}
+        title="Shipment Details"
+      >
+        {detailLog && (
+          <div className="space-y-4">
+            <div className="text-sm text-gray-400">
+              {detailLog.vendor && <p>Vendor: {detailLog.vendor.name}</p>}
+              <p>Date: {new Date(detailLog.createdAt).toLocaleString()}</p>
+              {detailLog.invoiceImageUrl && <p>Notes: {detailLog.invoiceImageUrl}</p>}
+            </div>
+            
+            <div className="border border-gray-700 rounded-lg divide-y divide-gray-700">
+              {parseItemsJson(detailLog.itemsJson).map((item, idx) => (
+                <div key={idx} className="p-3 flex items-center justify-between">
+                  <span>{item.itemName}</span>
+                  <span className="text-green-400 font-medium">+{item.quantity}</span>
+                </div>
+              ))}
+            </div>
+            
+            <Button onClick={() => setDetailLog(null)} className="w-full">
+              Close
+            </Button>
+          </div>
+        )}
+      </Modal>
     </AdminLayout>
   );
 }

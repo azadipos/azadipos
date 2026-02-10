@@ -78,7 +78,7 @@ export default function POSMenuPage() {
               onClick={() => router.push(`/pos/${companyId}/shift-report`)}
             >
               <ClipboardList className="h-10 w-10 text-blue-400" />
-              <span>End of Day</span>
+              <span>End of Shift</span>
             </Button>
           </motion.div>
           
