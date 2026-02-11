@@ -102,8 +102,8 @@ export async function GET(
           let categorySales = 0;
           let categoryCount = 0;
           
-          empTxns.forEach((txn) => {
-            txn.items.forEach((item) => {
+          empTxns.forEach((txn: any) => {
+            txn.items.forEach((item: any) => {
               if (item.item?.categoryId === categoryId) {
                 categorySales += item.lineTotal;
                 categoryCount++;
