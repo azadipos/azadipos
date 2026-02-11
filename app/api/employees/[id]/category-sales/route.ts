@@ -82,7 +82,7 @@ export async function GET(
       
       // Calculate category sales for each employee
       const employeeSales = await Promise.all(
-        employees.map(async (emp) => {
+        employees.map(async (emp: any) => {
           const empTxns = await prisma.transaction.findMany({
             where: {
               employeeId: emp.id,
