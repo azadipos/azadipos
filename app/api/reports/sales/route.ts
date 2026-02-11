@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
       averageTransaction: 0,
     };
     
-    transactions.forEach((t) => {
+    transactions.forEach((t: any) => {
       if (t.type === "sale" && t.status !== "deleted") {
         summary.totalSales += t.total;
         summary.saleCount++;
@@ -116,10 +116,10 @@ export async function GET(req: NextRequest) {
     } else if (groupBy === "category") {
       const grouped: { [key: string]: { name: string; sales: number; quantity: number; count: number } } = {};
       
-      transactions.forEach((t) => {
+      transactions.forEach((t: any) => {
         if (t.type !== "sale" || t.status === "deleted") return;
         
-        t.items.forEach((item) => {
+        t.items.forEach((item: any: any) => {
           const cat = item.item.category;
           const catId = cat?.id || "uncategorized";
           const catName = cat?.name || "Uncategorized";

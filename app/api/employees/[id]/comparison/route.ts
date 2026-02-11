@@ -43,7 +43,7 @@ export async function GET(
                 in: (await prisma.transaction.findMany({
                   where: { employeeId: emp.id },
                   select: { transactionNumber: true },
-                })).map(t => t.transactionNumber),
+                })).map((t: any) => t.transactionNumber),
               },
             },
           }),
@@ -56,7 +56,7 @@ export async function GET(
               in: (await prisma.transaction.findMany({
                 where: { employeeId: emp.id },
                 select: { transactionNumber: true },
-              })).map(t => t.transactionNumber),
+              })).map((t: any) => t.transactionNumber),
             },
           },
           _sum: { amount: true },

@@ -23,14 +23,14 @@ export async function GET(
     });
     
     // Calculate stats
-    const sales = transactions.filter(t => t.type === "sale" && t.status !== "deleted");
-    const refunds = transactions.filter(t => t.type === "refund");
-    const voids = transactions.filter(t => t.type === "void" || t.status === "deleted");
+    const sales = transactions.filter((t: any) => t.type === "sale" && t.status !== "deleted");
+    const refunds = transactions.filter((t: any) => t.type === "refund");
+    const voids = transactions.filter((t: any) => t.type === "void" || t.status === "deleted");
     
-    const totalSales = sales.reduce((sum, t) => sum + t.total, 0);
-    const totalRefunds = refunds.reduce((sum, t) => sum + t.total, 0);
-    const cashSales = sales.filter(t => t.paymentMethod === "cash").reduce((sum, t) => sum + t.total, 0);
-    const cardSales = sales.filter(t => t.paymentMethod === "card").reduce((sum, t) => sum + t.total, 0);
+    const totalSales = sales.reduce((sum: number, t: any) => sum + t.total, 0);
+    const totalRefunds = refunds.reduce((sum: number, t: any) => sum + t.total, 0);
+    const cashSales = sales.filter((t: any) => t.paymentMethod === "cash").reduce((sum: number, t: any) => sum + t.total, 0);
+    const cardSales = sales.filter((t: any) => t.paymentMethod === "card").reduce((sum: number, t: any) => sum + t.total, 0);
     
     // Get store credits issued during this shift
     const storeCredits = await prisma.storeCredit.findMany({
@@ -43,13 +43,13 @@ export async function GET(
       },
     });
     
-    const totalStoreCreditsIssued = storeCredits.reduce((sum, sc) => sum + sc.amount, 0);
+    const totalStoreCreditsIssued = storeCredits.reduce((sum: number, sc: any) => sum + sc.amount, 0);
     
     // Hourly breakdown
     const hourlyBreakdown: { hour: number; sales: number; transactions: number }[] = [];
     const hourMap = new Map<number, { sales: number; transactions: number }>();
     
-    sales.forEach(t => {
+    sales.forEach((t: any) => {
       const hour = new Date(t.createdAt).getHours();
       const existing = hourMap.get(hour) || { sales: 0, transactions: 0 };
       hourMap.set(hour, {
@@ -58,7 +58,7 @@ export async function GET(
       });
     });
     
-    hourMap.forEach((value, hour) => {
+    hourMap.forEach((value: any, hour: number) => {
       hourlyBreakdown.push({ hour, ...value });
     });
     
