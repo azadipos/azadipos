@@ -76,7 +76,7 @@ export async function GET(
       storeCreditTotal: storeCredits.reduce((sum: number, sc: any) => sum + sc.amount, 0),
     };
     
-    transactions.forEach((txn) => {
+    transactions.forEach((txn: any) => {
       if (txn.type === "sale") {
         stats.totalSales += txn.total;
         stats.saleCount++;
@@ -148,7 +148,7 @@ export async function GET(
     return NextResponse.json({
       shift,
       stats,
-      transactions: transactions.map((t) => ({
+      transactions: transactions.map((t: any) => ({
         id: t.id,
         transactionNumber: t.transactionNumber,
         type: t.type,

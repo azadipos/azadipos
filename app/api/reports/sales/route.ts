@@ -119,7 +119,7 @@ export async function GET(req: NextRequest) {
       transactions.forEach((t: any) => {
         if (t.type !== "sale" || t.status === "deleted") return;
         
-        t.items.forEach((item: any: any) => {
+        t.items.forEach((item: any) => {
           const cat = item.item.category;
           const catId = cat?.id || "uncategorized";
           const catName = cat?.name || "Uncategorized";
@@ -139,7 +139,7 @@ export async function GET(req: NextRequest) {
     } else if (groupBy === "employee") {
       const grouped: { [key: string]: { name: string; sales: number; refunds: number; count: number; refundCount: number } } = {};
       
-      transactions.forEach((t) => {
+      transactions.forEach((t: any) => {
         if (t.status === "deleted" && t.type !== "void") return;
         
         const empId = t.employee.id;
@@ -165,9 +165,9 @@ export async function GET(req: NextRequest) {
     
     // Top selling items
     const itemSales: { [key: string]: { id: string; name: string; quantity: number; revenue: number } } = {};
-    transactions.forEach((t) => {
+    transactions.forEach((t: any) => {
       if (t.type !== "sale" || t.status === "deleted") return;
-      t.items.forEach((item) => {
+      t.items.forEach((item: any) => {
         if (!itemSales[item.itemId]) {
           itemSales[item.itemId] = { id: item.itemId, name: item.itemName, quantity: 0, revenue: 0 };
         }

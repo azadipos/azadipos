@@ -126,9 +126,9 @@ export async function GET(
       teamComparison = employeeSales.sort((a, b) => b.categorySales - a.categorySales);
       
       // Calculate team average (excluding managers)
-      const nonManagerSales = teamComparison.filter((e) => !e.isManager);
+      const nonManagerSales = teamComparison.filter((e: any) => !e.isManager);
       if (nonManagerSales.length > 0) {
-        teamAverage = nonManagerSales.reduce((sum, e) => sum + e.categorySales, 0) / nonManagerSales.length;
+        teamAverage = nonManagerSales.reduce((sum: number, e: any) => sum + e.categorySales, 0) / nonManagerSales.length;
       }
     }
     

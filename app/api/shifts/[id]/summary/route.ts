@@ -31,7 +31,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     const transactions = shift.transactions ?? [];
     
     // Calculate summary
-    const totalSales = transactions.reduce((sum, t) => sum + (t?.total ?? 0), 0);
+    const totalSales = transactions.reduce((sum: number, t: any) => sum + (t?.total ?? 0), 0);
     const transactionCount = transactions.length;
     
     const cashTransactions = transactions.filter((t: any) => t?.paymentMethod === "cash");
