@@ -3,11 +3,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
     "electron:dev": "concurrently \"next dev\" \"wait-on http://localhost:3000 && electron .\"",
-    "electron:build": "next build && electron-builder --publish never",
+    "electron:build": "prisma generate && next build && electron-builder --publish never",
     "postinstall": "electron-builder install-app-deps"
   },
   "main": "electron/main.js",
