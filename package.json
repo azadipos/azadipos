@@ -15,8 +15,8 @@
   },
   "main": "electron/main.js",
   "build": {
-    "appId": "com.example.retailpos",
-    "productName": "Retail POS",
+    "asar": false,
+    "nodeGypRebuild": false,    "productName": "Retail POS",
     "files": [
       "**/*",
       "!node_modules/.cache/**"
