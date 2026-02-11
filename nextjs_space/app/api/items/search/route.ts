@@ -40,6 +40,7 @@ export async function GET(request: Request) {
         isWeightPriced: true,
         category: {
           select: {
+            id: true,
             taxRate: true,
           },
         },

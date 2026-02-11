@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,8 @@ import {
   Phone,
   CreditCard,
   Heart,
+  Tag,
+  Percent,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -35,6 +37,26 @@ interface CartItem {
   quantity: number;
   isWeightPriced: boolean;
   taxRate: number;
+  categoryId?: string;
+}
+
+interface Promotion {
+  id: string;
+  name: string;
+  type: string;
+  configJson: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  isActive: boolean;
+}
+
+interface PromotionSaving {
+  promotionId: string;
+  promotionName: string;
+  itemId: string;
+  itemName: string;
+  discount: number;
+  description: string;
 }
 
 interface AppliedStoreCredit {
@@ -48,7 +70,7 @@ interface SearchItem {
   barcode: string;
   price: number;
   isWeightPriced: boolean;
-  category: { taxRate: number } | null;
+  category: { id: string; taxRate: number } | null;
 }
 
 interface Customer {
@@ -81,6 +103,9 @@ export default function TransactionPage() {
   const [barcode, setBarcode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  
+  // Promotions state
+  const [promotions, setPromotions] = useState<Promotion[]>([]);
   
   // Store credit state
   const [appliedStoreCredits, setAppliedStoreCredits] = useState<AppliedStoreCredit[]>([]);
@@ -123,6 +148,33 @@ export default function TransactionPage() {
       router.push(`/pos/${companyId}/login`);
     }
   }, [employee, companyId, router]);
+  
+  // Fetch active promotions
+  useEffect(() => {
+    const fetchPromotions = async () => {
+      try {
+        const res = await fetch(`/api/promotions?companyId=${companyId}`);
+        if (res.ok) {
+          const data = await res.json();
+          // Filter only active promotions within date range
+          const now = new Date();
+          const activePromos = data.filter((p: Promotion) => {
+            if (!p.isActive) return false;
+            if (p.startDate && new Date(p.startDate) > now) return false;
+            if (p.endDate && new Date(p.endDate) < now) return false;
+            return true;
+          });
+          setPromotions(activePromos);
+        }
+      } catch (err) {
+        console.error("Failed to fetch promotions:", err);
+      }
+    };
+    
+    if (companyId) {
+      fetchPromotions();
+    }
+  }, [companyId]);
   
   // Always keep focus on barcode input (pause when modals are open)
   useEffect(() => {
@@ -416,6 +468,7 @@ export default function TransactionPage() {
           quantity,
           isWeightPriced: item.isWeightPriced,
           taxRate: item.category?.taxRate ?? 0,
+          categoryId: item.category?.id,
         },
       ];
     });
@@ -458,6 +511,159 @@ export default function TransactionPage() {
     setCart((prevCart) => prevCart.filter((item) => item.id !== cartItemId));
   };
   
+  // Calculate promotion savings
+  const promotionSavings = useMemo(() => {
+    const savings: PromotionSaving[] = [];
+    if (!cart || cart.length === 0 || !promotions || promotions.length === 0) return savings;
+    
+    for (const promo of promotions) {
+      if (!promo.configJson) continue;
+      
+      try {
+        const config = JSON.parse(promo.configJson);
+        
+        if (promo.type === "bogo") {
+          // BOGO: Buy X, Get Y at Z% off
+          const triggerQty = config.triggerQty || 1;
+          const freeQty = config.freeQty || 1;
+          const percentOff = config.percentOff ?? 100;
+          const appliesTo = config.appliesTo || "item";
+          
+          // Find matching items
+          const matchingItems = cart.filter(item => {
+            if (appliesTo === "item" && config.itemId) {
+              return item.itemId === config.itemId;
+            }
+            if (appliesTo === "category" && config.categoryId) {
+              return item.categoryId === config.categoryId;
+            }
+            if (appliesTo === "all") return true;
+            return false;
+          });
+          
+          for (const item of matchingItems) {
+            if (item.isWeightPriced) continue; // Skip weight-priced items for BOGO
+            
+            const totalQty = Math.floor(item.quantity);
+            const setSize = triggerQty + freeQty;
+            const completeSets = Math.floor(totalQty / setSize);
+            
+            if (completeSets > 0) {
+              const freeItemsCount = completeSets * freeQty;
+              const discount = freeItemsCount * item.price * (percentOff / 100);
+              
+              if (discount > 0) {
+                savings.push({
+                  promotionId: promo.id,
+                  promotionName: promo.name,
+                  itemId: item.itemId,
+                  itemName: item.name,
+                  discount: Math.round(discount * 100) / 100,
+                  description: percentOff === 100 
+                    ? `Buy ${triggerQty} Get ${freeQty} Free` 
+                    : `Buy ${triggerQty} Get ${freeQty} at ${percentOff}% Off`,
+                });
+              }
+            }
+          }
+        }
+        
+        if (promo.type === "sale") {
+          // Sale: % or $ off selected items
+          const discountType = config.discountType || "percent";
+          const discountValue = config.discountValue || 0;
+          const appliesTo = config.appliesTo || "items";
+          const itemIds = config.itemIds || [];
+          
+          const matchingItems = cart.filter(item => {
+            if (appliesTo === "items" && itemIds.length > 0) {
+              return itemIds.includes(item.itemId);
+            }
+            if (appliesTo === "category" && config.categoryId) {
+              return item.categoryId === config.categoryId;
+            }
+            if (appliesTo === "all") return true;
+            return false;
+          });
+          
+          for (const item of matchingItems) {
+            const lineTotal = item.price * item.quantity;
+            let discount = 0;
+            
+            if (discountType === "percent") {
+              discount = lineTotal * (discountValue / 100);
+            } else {
+              // Dollar off per item
+              discount = Math.min(discountValue * item.quantity, lineTotal);
+            }
+            
+            if (discount > 0) {
+              savings.push({
+                promotionId: promo.id,
+                promotionName: promo.name,
+                itemId: item.itemId,
+                itemName: item.name,
+                discount: Math.round(discount * 100) / 100,
+                description: discountType === "percent" 
+                  ? `${discountValue}% Off` 
+                  : `$${discountValue} Off`,
+              });
+            }
+          }
+        }
+        
+        if (promo.type === "bundle") {
+          // Bundle: Buy X for $Y
+          const bundleQty = config.qty || 2;
+          const bundlePrice = config.price || 0;
+          const appliesTo = config.appliesTo || "item";
+          
+          const matchingItems = cart.filter(item => {
+            if (appliesTo === "item" && config.itemId) {
+              return item.itemId === config.itemId;
+            }
+            if (appliesTo === "category" && config.categoryId) {
+              return item.categoryId === config.categoryId;
+            }
+            return false;
+          });
+          
+          for (const item of matchingItems) {
+            if (item.isWeightPriced) continue;
+            
+            const totalQty = Math.floor(item.quantity);
+            const completeBundles = Math.floor(totalQty / bundleQty);
+            
+            if (completeBundles > 0) {
+              const regularPrice = completeBundles * bundleQty * item.price;
+              const bundledPrice = completeBundles * bundlePrice;
+              const discount = regularPrice - bundledPrice;
+              
+              if (discount > 0) {
+                savings.push({
+                  promotionId: promo.id,
+                  promotionName: promo.name,
+                  itemId: item.itemId,
+                  itemName: item.name,
+                  discount: Math.round(discount * 100) / 100,
+                  description: `Buy ${bundleQty} for ${formatCurrency(bundlePrice)}`,
+                });
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Error parsing promotion config:", err);
+      }
+    }
+    
+    return savings;
+  }, [cart, promotions]);
+  
+  const totalPromotionSavings = useMemo(() => {
+    return promotionSavings.reduce((sum, s) => sum + s.discount, 0);
+  }, [promotionSavings]);
+  
   const calculateTotals = () => {
     let subtotal = 0;
     let tax = 0;
@@ -468,15 +674,21 @@ export default function TransactionPage() {
       tax += lineTotal * ((item?.taxRate ?? 0) / 100);
     });
     
+    // Apply promotion savings before tax calculation (for accurate tax)
+    const discountedSubtotal = subtotal - totalPromotionSavings;
+    const discountedTax = tax - (totalPromotionSavings * (tax / subtotal || 0));
+    
     const storeCreditTotal = appliedStoreCredits.reduce((sum, sc) => sum + sc.amount, 0);
     const giftCardTotal = appliedGiftCards.reduce((sum, gc) => sum + gc.amount, 0);
-    const grossTotal = subtotal + tax;
+    const grossTotal = Math.max(0, discountedSubtotal) + Math.max(0, discountedTax);
     const creditsTotal = storeCreditTotal + giftCardTotal;
     const total = Math.max(0, grossTotal - creditsTotal);
     
     return {
       subtotal: Math.round(subtotal * 100) / 100,
-      tax: Math.round(tax * 100) / 100,
+      discountedSubtotal: Math.round(Math.max(0, discountedSubtotal) * 100) / 100,
+      tax: Math.round(Math.max(0, discountedTax) * 100) / 100,
+      promotionSavings: Math.round(totalPromotionSavings * 100) / 100,
       storeCreditTotal: Math.round(storeCreditTotal * 100) / 100,
       giftCardTotal: Math.round(giftCardTotal * 100) / 100,
       grossTotal: Math.round(grossTotal * 100) / 100,
@@ -503,6 +715,7 @@ export default function TransactionPage() {
         shiftId,
         appliedStoreCredits,
         appliedGiftCards,
+        promotionSavings,
         customer: customer ? { id: customer.id, name: customer.name, phone: customer.phone, loyaltyPoints: customer.loyaltyPoints } : null,
       })
     );
@@ -805,16 +1018,49 @@ export default function TransactionPage() {
         </div>
         
         {/* Right: Totals */}
-        <div className="w-72 flex flex-col">
+        <div className="w-80 flex flex-col">
           <div className="bg-pos-card border border-pos-border rounded-lg p-4 flex-1 flex flex-col">
             <h3 className="text-lg font-semibold mb-4">Order Summary</h3>
             
-            <div className="flex-1">
+            <div className="flex-1 overflow-y-auto">
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-400">Subtotal</span>
                   <span>{formatCurrency(totals?.subtotal ?? 0)}</span>
                 </div>
+                
+                {/* Promotion Savings - Show prominently */}
+                {promotionSavings.length > 0 && (
+                  <div className="border-t border-green-800 pt-2 mt-2 bg-green-900/20 -mx-4 px-4 py-2">
+                    <div className="flex items-center gap-1 mb-2">
+                      <Tag className="h-4 w-4 text-green-400" />
+                      <span className="text-green-400 font-semibold text-xs uppercase tracking-wide">
+                        Savings Applied!
+                      </span>
+                    </div>
+                    {promotionSavings.map((saving, idx) => (
+                      <div key={`${saving.promotionId}-${saving.itemId}-${idx}`} className="flex justify-between items-start text-xs mb-1">
+                        <div className="flex-1 min-w-0 pr-2">
+                          <p className="text-green-300 truncate">{saving.promotionName}</p>
+                          <p className="text-green-500/70 truncate text-[10px]">{saving.itemName} • {saving.description}</p>
+                        </div>
+                        <span className="text-green-400 font-medium whitespace-nowrap">
+                          -{formatCurrency(saving.discount)}
+                        </span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between items-center pt-2 mt-2 border-t border-green-800">
+                      <span className="text-green-400 font-semibold flex items-center gap-1">
+                        <Percent className="h-3 w-3" />
+                        Total Savings
+                      </span>
+                      <span className="text-green-400 font-bold">
+                        -{formatCurrency(totals?.promotionSavings ?? 0)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+                
                 <div className="flex justify-between">
                   <span className="text-gray-400">Tax</span>
                   <span>{formatCurrency(totals?.tax ?? 0)}</span>
@@ -881,6 +1127,15 @@ export default function TransactionPage() {
                 <span>Total</span>
                 <span className="text-green-400">{formatCurrency(totals?.total ?? 0)}</span>
               </div>
+              
+              {/* Show total savings prominently at bottom */}
+              {(totals?.promotionSavings ?? 0) > 0 && (
+                <div className="mt-2 text-center py-2 bg-green-900/30 rounded-lg border border-green-700">
+                  <p className="text-green-400 font-semibold text-sm">
+                    🎉 You saved {formatCurrency(totals?.promotionSavings ?? 0)} today!
+                  </p>
+                </div>
+              )}
               
               <Button
                 variant="pos-primary"

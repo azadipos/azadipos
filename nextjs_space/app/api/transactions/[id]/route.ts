@@ -104,17 +104,20 @@ export async function DELETE(
     }
     
     // Create audit trail entry - CRITICAL for legal compliance
+    let auditTrailCreated = false;
+    let auditTrailError: string | null = null;
+    
     try {
-      await prisma.auditTrail.create({
+      const auditEntry = await prisma.auditTrail.create({
         data: {
           companyId: transaction.companyId,
           action: source === "admin" ? "DELETE_TRANSACTION" : "VOID",
           entityType: "transaction",
           entityId: transaction.id,
           description: `Transaction #${transaction.transactionNumber} ${source === "admin" ? 'deleted' : 'voided'}: ${reason}`,
-          employeeId: transaction.employeeId,
+          employeeId: transaction.employeeId || null,
           employeeName: transaction.employee?.name || null,
-          authorizedById: authorizedByEmployeeId,
+          authorizedById: authorizedByEmployeeId || null,
           authorizedByName: authorizedByName,
           metadata: JSON.stringify({
             total: transaction.total,
@@ -124,12 +127,15 @@ export async function DELETE(
             reason,
             itemCount: transaction.items.length,
             transactionNumber: transaction.transactionNumber,
-            transactionDate: transaction.createdAt,
+            transactionDate: transaction.createdAt?.toISOString() || null,
           }),
         },
       });
-    } catch (auditError) {
+      auditTrailCreated = true;
+      console.log("Audit trail entry created:", auditEntry.id);
+    } catch (auditError: any) {
       console.error("Failed to create audit trail entry:", auditError);
+      auditTrailError = auditError?.message || "Unknown error";
       // Don't fail the whole operation, but log the error
     }
     
@@ -137,6 +143,8 @@ export async function DELETE(
       success: true, 
       message: "Transaction voided successfully",
       transaction: updatedTransaction,
+      auditTrailCreated,
+      auditTrailError,
     });
   } catch (error) {
     console.error("Delete transaction error:", error);
