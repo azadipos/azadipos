@@ -43,11 +43,11 @@ export async function GET(
     let employeeCategoryTransactions = 0;
     const flaggedTransactions: any[] = [];
     
-    transactions.forEach((txn) => {
+    transactions.forEach((txn: any) => {
       let hasCategoryItem = false;
       let categoryTotal = 0;
       
-      txn.items.forEach((item) => {
+      txn.items.forEach((item: any) => {
         if (!categoryId || item.item?.categoryId === categoryId) {
           hasCategoryItem = true;
           categoryTotal += item.lineTotal;
