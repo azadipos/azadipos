@@ -8,6 +8,7 @@ on:
 jobs:
   build-windows:
     runs-on: windows-latest
+    
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,21 +31,54 @@ jobs:
           NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
           NEXTAUTH_URL: http://localhost:3000
 
-      - name: Prepare standalone for Electron
+      - name: Prepare standalone build
         shell: bash
         run: |
-          # Copy static files to standalone
+          echo "=== Preparing Next.js standalone for Electron ==="
+          
+          # Verify standalone was created
+          if [ ! -d ".next/standalone" ]; then
+            echo "ERROR: .next/standalone directory not found!"
+            exit 1
+          fi
+          
+          # Copy static files into standalone
+          echo "Copying static files..."
           mkdir -p .next/standalone/.next/static
           cp -r .next/static/* .next/standalone/.next/static/
           
-          # Copy public folder to standalone
+          # Copy public folder into standalone
+          echo "Copying public folder..."
           mkdir -p .next/standalone/public
           cp -r public/* .next/standalone/public/
+          
+          # Copy prisma schema (needed for client)
+          echo "Copying prisma schema..."
+          mkdir -p .next/standalone/prisma
+          cp prisma/schema.prisma .next/standalone/prisma/
+          
+          # Create .env file in standalone with placeholder
+          echo "Creating .env placeholder..."
+          cat > .next/standalone/.env << 'ENV'
+          DATABASE_URL=file:./pos.db
+          NEXTAUTH_SECRET=local-development-secret-key-change-in-production
+          NEXTAUTH_URL=http://localhost:3000
+          ENV
+          
+          echo "Standalone build prepared successfully!"
+          echo "Contents of .next/standalone:"
+          ls -la .next/standalone/
 
       - name: Package Electron (Windows)
         run: npx electron-builder --win --x64 --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List dist contents
+        shell: bash
+        run: |
+          echo "=== Build artifacts ==="
+          ls -la dist/ || echo "No dist folder"
 
       - name: Upload installers
         uses: actions/upload-artifact@v4
