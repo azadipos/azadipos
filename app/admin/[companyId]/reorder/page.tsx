@@ -59,7 +59,7 @@ export default function ReorderPage() {
   const visibleItems = (items ?? []).filter((item) => !orderedItems.has(item.id));
   
   // Group items by vendor
-  const groupedItems: GroupedItems = visibleItems.reduce((acc, item) => {
+  const groupedItems: GroupedItems = visibleItems.reduce((acc: any, item: any) => {
     const vendorId = item?.vendor?.id ?? "no-vendor";
     const vendorName = item?.vendor?.name ?? "No Vendor Assigned";
     

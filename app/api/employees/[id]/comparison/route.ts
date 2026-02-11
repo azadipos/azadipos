@@ -92,7 +92,7 @@ export async function GET(
     );
     
     // Sort by total sales descending
-    comparison.sort((a, b) => b.totalSales - a.totalSales);
+    comparison.sort((a: any, b: any) => b.totalSales - a.totalSales);
     
     // Calculate averages for comparison
     const nonManagerCount = comparison.filter((e: any) => !e.isManager).length;

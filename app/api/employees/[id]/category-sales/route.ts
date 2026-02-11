@@ -123,7 +123,7 @@ export async function GET(
       );
       
       // Sort by category sales descending
-      teamComparison = employeeSales.sort((a, b) => b.categorySales - a.categorySales);
+      teamComparison = employeeSales.sort((a: any, b: any) => b.categorySales - a.categorySales);
       
       // Calculate team average (excluding managers)
       const nonManagerSales = teamComparison.filter((e: any) => !e.isManager);

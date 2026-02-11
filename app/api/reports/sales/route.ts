@@ -80,7 +80,7 @@ export async function GET(req: NextRequest) {
     if (groupBy === "day" || groupBy === "week" || groupBy === "month") {
       const grouped: { [key: string]: { sales: number; refunds: number; count: number; tax: number } } = {};
       
-      transactions.forEach((t) => {
+      transactions.forEach((t: any) => {
         if (t.status === "deleted" && t.type !== "void") return;
         
         const date = new Date(t.createdAt);
@@ -111,7 +111,7 @@ export async function GET(req: NextRequest) {
       
       breakdown = Object.entries(grouped)
         .map(([date, data]) => ({ date, ...data, net: data.sales - data.refunds }))
-        .sort((a, b) => a.date.localeCompare(b.date));
+        .sort((a: any, b: any) => a.date.localeCompare(b.date));
         
     } else if (groupBy === "category") {
       const grouped: { [key: string]: { name: string; sales: number; quantity: number; count: number } } = {};
@@ -134,7 +134,7 @@ export async function GET(req: NextRequest) {
         });
       });
       
-      breakdown = Object.values(grouped).sort((a, b) => b.sales - a.sales);
+      breakdown = Object.values(grouped).sort((a: any, b: any) => b.sales - a.sales);
       
     } else if (groupBy === "employee") {
       const grouped: { [key: string]: { name: string; sales: number; refunds: number; count: number; refundCount: number } } = {};
@@ -160,7 +160,7 @@ export async function GET(req: NextRequest) {
       
       breakdown = Object.entries(grouped)
         .map(([id, data]) => ({ id, ...data, net: data.sales - data.refunds }))
-        .sort((a, b) => b.sales - a.sales);
+        .sort((a: any, b: any) => b.sales - a.sales);
     }
     
     // Top selling items
@@ -177,7 +177,7 @@ export async function GET(req: NextRequest) {
     });
     
     const topItems = Object.values(itemSales)
-      .sort((a, b) => b.revenue - a.revenue)
+      .sort((a: any, b: any) => b.revenue - a.revenue)
       .slice(0, 10);
     
     return NextResponse.json({

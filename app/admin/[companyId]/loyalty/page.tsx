@@ -174,7 +174,7 @@ export default function LoyaltyPage() {
       value: parseFloat(newTierValue),
       description: newTierDesc || undefined,
     };
-    setRewardTiers([...rewardTiers, tier].sort((a, b) => a.points - b.points));
+    setRewardTiers([...rewardTiers, tier].sort((a: any, b: any) => a.points - b.points));
     setTierModalOpen(false);
     setNewTierPoints("");
     setNewTierType("percent_off");

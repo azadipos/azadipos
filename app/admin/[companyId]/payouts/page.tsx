@@ -99,7 +99,7 @@ export default function PayoutsPage() {
     }
   };
   
-  const totalPayouts = payouts.reduce((sum, p) => sum + p.amount, 0);
+  const totalPayouts = payouts.reduce((sum: number, p: any) => sum + p.amount, 0);
   
   if (loading) {
     return (

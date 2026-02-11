@@ -54,7 +54,7 @@ export async function GET(request: Request) {
     });
     
     // Sort results to prioritize barcode prefix matches
-    const sortedItems = items.sort((a, b) => {
+    const sortedItems = items.sort((a: any, b: any) => {
       const aStartsWithBarcode = a.barcode.toLowerCase().startsWith(query.toLowerCase());
       const bStartsWithBarcode = b.barcode.toLowerCase().startsWith(query.toLowerCase());
       

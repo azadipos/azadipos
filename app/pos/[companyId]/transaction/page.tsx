@@ -661,7 +661,7 @@ export default function TransactionPage() {
   }, [cart, promotions]);
   
   const totalPromotionSavings = useMemo(() => {
-    return promotionSavings.reduce((sum, s) => sum + s.discount, 0);
+    return promotionSavings.reduce((sum: number, s: any) => sum + s.discount, 0);
   }, [promotionSavings]);
   
   const calculateTotals = () => {
@@ -678,8 +678,8 @@ export default function TransactionPage() {
     const discountedSubtotal = subtotal - totalPromotionSavings;
     const discountedTax = tax - (totalPromotionSavings * (tax / subtotal || 0));
     
-    const storeCreditTotal = appliedStoreCredits.reduce((sum, sc) => sum + sc.amount, 0);
-    const giftCardTotal = appliedGiftCards.reduce((sum, gc) => sum + gc.amount, 0);
+    const storeCreditTotal = appliedStoreCredits.reduce((sum: number, sc: any) => sum + sc.amount, 0);
+    const giftCardTotal = appliedGiftCards.reduce((sum: number, gc: any) => sum + gc.amount, 0);
     const grossTotal = Math.max(0, discountedSubtotal) + Math.max(0, discountedTax);
     const creditsTotal = storeCreditTotal + giftCardTotal;
     const total = Math.max(0, grossTotal - creditsTotal);

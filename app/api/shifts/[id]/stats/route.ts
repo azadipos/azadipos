@@ -62,7 +62,7 @@ export async function GET(
       hourlyBreakdown.push({ hour, ...value });
     });
     
-    hourlyBreakdown.sort((a, b) => a.hour - b.hour);
+    hourlyBreakdown.sort((a: any, b: any) => a.hour - b.hour);
     
     return NextResponse.json({
       totalSales,

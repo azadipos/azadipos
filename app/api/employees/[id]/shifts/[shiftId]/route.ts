@@ -125,7 +125,7 @@ export async function GET(
     });
     
     // Sort by timestamp
-    sensitiveActions.sort((a, b) => 
+    sensitiveActions.sort((a: any, b: any) => 
       new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
     );
     
@@ -159,7 +159,7 @@ export async function GET(
       })),
       sensitiveActions,
       hourlyBreakdown: Object.entries(hourlyBreakdown)
-        .sort((a, b) => parseInt(a[0]) - parseInt(b[0]))
+        .sort((a: any, b: any) => parseInt(a[0]) - parseInt(b[0]))
         .map(([hour, data]) => ({ hour, ...data })),
       storeCredits,
     });

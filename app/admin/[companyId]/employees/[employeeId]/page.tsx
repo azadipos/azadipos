@@ -241,7 +241,7 @@ export default function EmployeeStatsPage() {
   };
   
   // Calculate fraud risk indicators
-  const currentEmployee = comparison?.employees.find((e) => e.isCurrentEmployee);
+  const currentEmployee = comparison?.employees.find((e: any) => e.isCurrentEmployee);
   const isHighRefundRate = currentEmployee && comparison?.averages 
     ? currentEmployee.refundRate > comparison.averages.refundRate * 1.5 
     : false;
@@ -749,7 +749,7 @@ export default function EmployeeStatsPage() {
       <Modal
         isOpen={categorySalesModalOpen}
         onClose={() => setCategorySalesModalOpen(false)}
-        title={`Category Sales Analysis: ${categories.find((c) => c.id === selectedCategory)?.name || ""}`}
+        title={`Category Sales Analysis: ${categories.find((c: any) => c.id === selectedCategory)?.name || ""}`}
       >
         {categorySalesLoading ? (
           <div className="flex justify-center py-12">
