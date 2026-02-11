@@ -1,5 +1,8 @@
 {
   "name": "app",
+  "version": "1.0.0",
+  "description": "Retail POS System - Desktop Application",
+  "author": "Retail POS Team",
   "private": true,
   "scripts": {
     "dev": "next dev",
