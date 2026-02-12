@@ -49,7 +49,7 @@ model Category {
 model Vendor {
   id          String  @id @default(cuid())
   name        String
-  contact     String?
+  contactInfo  String?
   email       String?
   phone       String?
   companyId   String
