@@ -1,7 +1,6 @@
 generator client {
-    provider = "prisma-client-js"
-    binaryTargets = ["native", "linux-musl-arm64-openssl-3.0.x"]
-    output = "/home/ubuntu/retail_pos_system/nextjs_space/node_modules/.prisma/client"
+    provider      = "prisma-client-js"
+    binaryTargets = ["native", "windows", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -98,10 +97,10 @@ model Employee {
   companyId String
   company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   name      String
-  pin       String?  // Legacy PIN (deprecated)
-  barcode   String?  // Unique scannable barcode (EMP-XXXXX format)
+  pin       String?
+  barcode   String?
   isManager Boolean  @default(false)
-  inSales   Boolean  @default(true)  // If false, excluded from sales metrics
+  inSales   Boolean  @default(true)
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   
@@ -244,21 +243,15 @@ model ReturnPolicy {
   id              String   @id @default(cuid())
   companyId       String
   company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
-  // Target type: "item" or "category"
   targetType      String
-  targetId        String   // Item ID or Category ID
-  
-  // Policy settings
-  returnPeriodDays Int?    // null means use company default
+  targetId        String
+  returnPeriodDays Int?
   noReturns        Boolean @default(false)
-  
   createdAt       DateTime @default(now())
   
   @@unique([companyId, targetType, targetId])
 }
 
-// Customer Loyalty
 model Customer {
   id           String   @id @default(cuid())
   companyId    String
@@ -281,20 +274,13 @@ model LoyaltyConfig {
   id                  String   @id @default(cuid())
   companyId           String   @unique
   company             Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
-  // Points earning: e.g., 1 point per $1 spent
   pointsPerDollar     Float    @default(1)
-  
-  // Rewards (stored as JSON array of tiers)
-  // e.g., [{"points": 100, "type": "percent_off", "value": 5}, {"points": 500, "type": "cash_off", "value": 10}]
   rewardTiersJson     String?
-  
   isEnabled           Boolean  @default(true)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 }
 
-// Gift Cards
 model GiftCard {
   id           String    @id @default(cuid())
   companyId    String
@@ -303,12 +289,11 @@ model GiftCard {
   initialValue Float
   balance      Float
   isActive     Boolean   @default(true)
-  purchasedAt  DateTime?  // When it was sold to a customer
+  purchasedAt  DateTime?
   purchaseTransactionId String?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   
-  // Track usage history
   usageHistory GiftCardUsage[]
 }
 
@@ -322,19 +307,18 @@ model GiftCardUsage {
   createdAt     DateTime @default(now())
 }
 
-// Audit Trail for tracking all sensitive actions
 model AuditTrail {
   id           String   @id @default(cuid())
   companyId    String
-  action       String   // e.g., "VOID", "REFUND", "DELETE_TRANSACTION", "STORE_CREDIT_ISSUED", "SHIFT_CLOSED", etc.
-  entityType   String   // "transaction", "store_credit", "shift", etc.
+  action       String
+  entityType   String
   entityId     String?
   description  String
-  employeeId   String?  // Employee who performed the action
+  employeeId   String?
   employeeName String?
-  authorizedById String?  // Manager who authorized (if applicable)
+  authorizedById String?
   authorizedByName String?
-  metadata     String?  // JSON for additional details
+  metadata     String?
   createdAt    DateTime @default(now())
   
   @@index([companyId, createdAt])
