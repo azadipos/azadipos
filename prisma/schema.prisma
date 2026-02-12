@@ -114,21 +114,26 @@ model Employee {
   authorizedStoreCredits StoreCredit[] @relation("AuthorizedStoreCredit")
   auditTrails AuditTrail[]
   authorizedAuditTrails AuditTrail[] @relation("AuthorizedAuditTrail")
+  closedShifts   Shift[] @relation("ShiftClosedBy")
 
   @@unique([companyId, barcode])
 }
 
 model Shift {
   id             String    @id @default(cuid())
+  registerId     String?
   startTime      DateTime  @default(now())
   endTime        DateTime?
   openingBalance Float     @default(0)
   closingBalance Float?
+  cashInjections Float     @default(0)
   status         String    @default("open")
   employeeId     String
   employee       Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   companyId      String
   company        Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  closedByEmployeeId String?
+  closedBy       Employee? @relation("ShiftClosedBy", fields: [closedByEmployeeId], references: [id])
   transactions   Transaction[]
 }
 
