@@ -21,8 +21,10 @@ jobs:
       - name: Install dependencies
         run: npm install --legacy-peer-deps
 
-      - name: Generate Prisma Client
+      - name: Generate Prisma Client for Windows
         run: npx prisma generate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
       - name: Build Next.js standalone
         run: npm run build
@@ -31,57 +33,86 @@ jobs:
           NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
           NEXTAUTH_URL: http://localhost:3000
 
-      - name: Debug standalone output
+      - name: Verify and prepare standalone
         shell: pwsh
+        env:
+          DB_URL: ${{ secrets.DATABASE_URL }}
+          AUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
         run: |
-          Write-Host "=== Checking .next directory ===" -ForegroundColor Yellow
-          if (Test-Path ".next") {
-            Get-ChildItem ".next" | ForEach-Object { Write-Host "  $_" }
-          } else {
-            Write-Host "  .next NOT FOUND" -ForegroundColor Red
+          Write-Host "=== VERIFYING STANDALONE BUILD ===" -ForegroundColor Cyan
+          
+          # Check standalone exists
+          if (-not (Test-Path ".next/standalone")) {
+            Write-Host "FATAL: .next/standalone not found" -ForegroundColor Red
+            Get-ChildItem ".next" -ErrorAction SilentlyContinue
+            exit 1
           }
           
-          Write-Host "`n=== Checking .next/standalone ===" -ForegroundColor Yellow
-          if (Test-Path ".next/standalone") {
-            Get-ChildItem ".next/standalone" | ForEach-Object { Write-Host "  $_" }
-            
-            Write-Host "`n=== Looking for server.js ===" -ForegroundColor Yellow
-            Get-ChildItem ".next/standalone" -Filter "*.js" -Recurse | Select-Object -First 20 | ForEach-Object { Write-Host "  $($_.FullName)" }
-          } else {
-            Write-Host "  .next/standalone NOT FOUND" -ForegroundColor Red
-          }
-
-      - name: Prepare standalone for packaging
-        shell: pwsh
-        run: |
-          Write-Host "=== PREPARING STANDALONE ===" -ForegroundColor Green
-          
+          # Check server.js exists
           if (-not (Test-Path ".next/standalone/server.js")) {
-            Write-Host "server.js not found in .next/standalone/" -ForegroundColor Red
-            Write-Host "Checking for alternate locations..." -ForegroundColor Yellow
-            Get-ChildItem ".next" -Recurse -Filter "server.js" | ForEach-Object { Write-Host "Found: $($_.FullName)" }
+            Write-Host "FATAL: server.js not found" -ForegroundColor Red
+            Get-ChildItem ".next/standalone" -ErrorAction SilentlyContinue
             exit 1
           }
           
           Write-Host "server.js found!" -ForegroundColor Green
           
+          # Copy static files
+          Write-Host "Copying static files..." -ForegroundColor Yellow
           New-Item -ItemType Directory -Force -Path ".next/standalone/.next/static" | Out-Null
           Copy-Item -Recurse -Force ".next/static/*" ".next/standalone/.next/static/"
-          Write-Host "Static files copied"
           
+          # Copy public folder
+          Write-Host "Copying public folder..." -ForegroundColor Yellow
           New-Item -ItemType Directory -Force -Path ".next/standalone/public" | Out-Null
           Copy-Item -Recurse -Force "public/*" ".next/standalone/public/"
-          Write-Host "Public folder copied"
           
-          Set-Content -Path ".next/standalone/.env" -Value "DATABASE_URL=file:./data.db`nNEXTAUTH_SECRET=electron-secret`nNEXTAUTH_URL=http://localhost:3000"
-          Write-Host "env file created"
+          # Copy prisma folder (for schema)
+          Write-Host "Copying prisma folder..." -ForegroundColor Yellow
+          New-Item -ItemType Directory -Force -Path ".next/standalone/prisma" | Out-Null
+          Copy-Item -Force "prisma/schema.prisma" ".next/standalone/prisma/"
           
-          Write-Host "=== DONE ===" -ForegroundColor Green
+          # Create .env with REAL database credentials
+          Write-Host "Creating .env with database credentials..." -ForegroundColor Yellow
+          $envContent = @"
+          DATABASE_URL=$env:DB_URL
+          NEXTAUTH_SECRET=$env:AUTH_SECRET
+          NEXTAUTH_URL=http://localhost:3000
+          "@
+          $envContent | Out-File -FilePath ".next/standalone/.env" -Encoding ASCII
+          
+          # Verify .env was created (without showing secrets)
+          if (Test-Path ".next/standalone/.env") {
+            Write-Host ".env created successfully" -ForegroundColor Green
+          } else {
+            Write-Host "FATAL: .env not created" -ForegroundColor Red
+            exit 1
+          }
+          
+          # List final structure
+          Write-Host "`n=== STANDALONE STRUCTURE ===" -ForegroundColor Cyan
+          Get-ChildItem ".next/standalone" | ForEach-Object { Write-Host "  $_" }
+          
+          Write-Host "`n=== .next FOLDER ===" -ForegroundColor Cyan
+          Get-ChildItem ".next/standalone/.next" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $_" }
+          
+          Write-Host "`nPreparation complete!" -ForegroundColor Green
 
       - name: Package Electron
         run: npx electron-builder --win --x64 --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Show artifacts
+        shell: pwsh
+        run: |
+          Write-Host "=== BUILD ARTIFACTS ===" -ForegroundColor Cyan
+          if (Test-Path "dist") {
+            Get-ChildItem "dist" -Filter "*.exe" | ForEach-Object {
+              $sizeMB = [math]::Round($_.Length / 1MB, 2)
+              Write-Host "  $($_.Name) - $sizeMB MB" -ForegroundColor Green
+            }
+          }
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
