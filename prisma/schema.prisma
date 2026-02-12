@@ -13,115 +13,113 @@ model Company {
   name         String
   createdAt    DateTime @default(now())
   
+  // Return policy settings
   defaultReturnPeriodDays Int @default(30)
   
   categories   Category[]
+  vendors      Vendor[]
   items        Item[]
   employees    Employee[]
   shifts       Shift[]
   transactions Transaction[]
   promotions   Promotion[]
-  vendors      Vendor[]
   storeCredits StoreCredit[]
   receivingLogs ReceivingLog[]
   payouts      Payout[]
   returnPolicies ReturnPolicy[]
-  giftCards    GiftCard[]
   customers    Customer[]
-  auditTrails  AuditTrail[]
   loyaltyConfig LoyaltyConfig?
+  giftCards    GiftCard[]
 }
 
 model Category {
   id              String   @id @default(cuid())
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   name            String
   taxRate         Float    @default(0)
   isAgeRestricted Boolean  @default(false)
-  returnPeriodDays Int?
-  noReturns       Boolean  @default(false)
-  companyId       String
-  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  returnPeriodDays Int     @default(30)
+  createdAt       DateTime @default(now())
+  
   items           Item[]
-  returnPolicies  ReturnPolicy[]
-
+  
   @@unique([companyId, name])
 }
 
 model Vendor {
-  id          String  @id @default(cuid())
-  name        String
-  contactInfo String?
-  email       String?
-  phone       String?
-  companyId   String
-  company     Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  items       Item[]
+  id           String   @id @default(cuid())
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name         String
+  contactInfo  String?
+  createdAt    DateTime @default(now())
+  
+  items        Item[]
   receivingLogs ReceivingLog[]
-
+  payouts      Payout[]
+  
   @@unique([companyId, name])
 }
 
 model Item {
-  id              String    @id @default(cuid())
-  name            String
-  barcode         String
-  price           Float
-  cost            Float     @default(0)
-  quantityOnHand  Int       @default(0)
-  reorderPoint    Int       @default(10)
-  isWeightPriced  Boolean   @default(false)
-  imageUrl        String?
-  isActive        Boolean   @default(true)
+  id             String   @id @default(cuid())
+  companyId      String
+  company        Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  barcode        String
+  name           String
+  price          Float
+  cost           Float    @default(0)
+  categoryId     String?
+  category       Category? @relation(fields: [categoryId], references: [id])
+  vendorId       String?
+  vendor         Vendor?  @relation(fields: [vendorId], references: [id])
+  reorderPoint   Int      @default(0)
+  isWeightPriced Boolean  @default(false)
+  imageUrl       String?
+  isActive       Boolean  @default(true)
+  quantityOnHand Int      @default(0)
+  createdAt      DateTime @default(now())
+  
+  // Return policy overrides (null means use category/company default)
   returnPeriodDays Int?
-  noReturns       Boolean   @default(false)
-  companyId       String
-  company         Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  categoryId      String?
-  category        Category? @relation(fields: [categoryId], references: [id])
-  vendorId        String?
-  vendor          Vendor?   @relation(fields: [vendorId], references: [id])
+  noReturns        Boolean @default(false)
+  
   transactionItems TransactionItem[]
-  returnPolicies  ReturnPolicy[]
-  costHistory     CostHistory[]
-
+  
   @@unique([companyId, barcode])
-}
-
-model CostHistory {
-  id        String   @id @default(cuid())
-  itemId    String
-  item      Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  vendorId  String?
-  vendorName String?
-  cost      Float
-  quantity  Int
-  createdAt DateTime @default(now())
+  @@index([companyId, isActive])
+  @@index([companyId, name])
 }
 
 model Employee {
-  id          String   @id @default(cuid())
-  name        String
-  barcode     String?  @unique
-  pin         String?
-  isManager   Boolean  @default(false)
-  isActive    Boolean  @default(true)
-  inSales     Boolean  @default(true)
-  companyId   String
-  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  shifts      Shift[]
-  transactions Transaction[]
-  authorizedTransactions Transaction[] @relation("AuthorizedBy")
-  issuedStoreCredits StoreCredit[] @relation("IssuedBy")
-  authorizedStoreCredits StoreCredit[] @relation("AuthorizedStoreCredit")
-  auditTrails AuditTrail[]
-  authorizedAuditTrails AuditTrail[] @relation("AuthorizedAuditTrail")
-  closedShifts Shift[] @relation("ShiftClosedBy")
-
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name      String
+  pin       String?
+  barcode   String?
+  isManager Boolean  @default(false)
+  inSales   Boolean  @default(true)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  
+  shifts             Shift[]
+  transactions       Transaction[] @relation("EmployeeTransactions")
+  authorizedTransactions Transaction[] @relation("AuthorizedTransactions")
+  issuedStoreCredits     StoreCredit[] @relation("IssuedByEmployee")
+  authorizedStoreCredits StoreCredit[] @relation("AuthorizedByEmployee")
+  closedShifts       Shift[] @relation("ShiftClosedBy")
+  
   @@unique([companyId, barcode])
 }
 
 model Shift {
   id             String    @id @default(cuid())
+  companyId      String
+  company        Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employeeId     String
+  employee       Employee  @relation(fields: [employeeId], references: [id])
   registerId     String?
   startTime      DateTime  @default(now())
   endTime        DateTime?
@@ -129,92 +127,85 @@ model Shift {
   closingBalance Float?
   cashInjections Float     @default(0)
   status         String    @default("open")
-  employeeId     String
-  employee       Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  companyId      String
-  company        Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
   closedByEmployeeId String?
   closedBy       Employee? @relation("ShiftClosedBy", fields: [closedByEmployeeId], references: [id])
+  
   transactions   Transaction[]
 }
 
 model Transaction {
   id                    String   @id @default(cuid())
+  companyId             String
+  company               Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  shiftId               String?
+  shift                 Shift?   @relation(fields: [shiftId], references: [id])
+  employeeId            String
+  employee              Employee @relation("EmployeeTransactions", fields: [employeeId], references: [id])
   transactionNumber     String
   type                  String   @default("sale")
+  subtotal              Float
+  tax                   Float
   total                 Float
-  subtotal              Float    @default(0)
-  tax                   Float    @default(0)
   paymentMethod         String   @default("cash")
-  cashAmount            Float?
-  cardAmount            Float?
   cashGiven             Float?
   changeDue             Float?
   status                String   @default("completed")
   linkedTransactionId   String?
+  authorizedByEmployeeId String?
+  authorizedBy          Employee? @relation("AuthorizedTransactions", fields: [authorizedByEmployeeId], references: [id])
+  customerId            String?
+  customer              Customer? @relation(fields: [customerId], references: [id])
   loyaltyPointsEarned   Int      @default(0)
   loyaltyPointsRedeemed Int      @default(0)
   createdAt             DateTime @default(now())
-  employeeId            String
-  employee              Employee @relation(fields: [employeeId], references: [id])
-  authorizedById        String?
-  authorizedBy          Employee? @relation("AuthorizedBy", fields: [authorizedById], references: [id])
-  shiftId               String?
-  shift                 Shift?   @relation(fields: [shiftId], references: [id])
-  companyId             String
-  company               Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  customerId            String?
-  customer              Customer? @relation(fields: [customerId], references: [id])
+  
   items                 TransactionItem[]
-  storeCredits          StoreCredit[]
-  redeemedStoreCredits  StoreCredit[] @relation("RedeemedTransaction")
-  giftCardUsages        GiftCardUsage[]
-
+  
   @@unique([companyId, transactionNumber])
 }
 
 model TransactionItem {
   id            String      @id @default(cuid())
-  quantity      Float
-  price         Float
-  name          String
-  barcode       String?
   transactionId String
   transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
-  itemId        String?
-  item          Item?       @relation(fields: [itemId], references: [id])
+  itemId        String
+  item          Item        @relation(fields: [itemId], references: [id])
+  itemName      String
+  quantity      Float
+  unitPrice     Float
+  lineTotal     Float
+  isWeightItem  Boolean     @default(false)
 }
 
 model Promotion {
-  id          String    @id @default(cuid())
-  name        String
-  type        String
-  config      Json
-  startDate   DateTime?
-  endDate     DateTime?
-  isActive    Boolean   @default(true)
-  companyId   String
-  company     Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  id         String    @id @default(cuid())
+  companyId  String
+  company    Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name       String
+  type       String
+  configJson String?
+  startDate  DateTime?
+  endDate    DateTime?
+  isActive   Boolean   @default(true)
+  createdAt  DateTime  @default(now())
 }
 
 model StoreCredit {
-  id            String   @id @default(cuid())
-  barcode       String   @unique
-  amount        Float
-  isUsed        Boolean  @default(false)
-  usedAt        DateTime?
-  createdAt     DateTime @default(now())
-  companyId     String
-  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  transactionId String?
-  transaction   Transaction? @relation(fields: [transactionId], references: [id])
-  redeemedTransactionId String?
-  redeemedTransaction   Transaction? @relation("RedeemedTransaction", fields: [redeemedTransactionId], references: [id])
-  description   String?
-  issuedByEmployeeId String?
-  issuedByEmployee   Employee? @relation("IssuedBy", fields: [issuedByEmployeeId], references: [id])
-  authorizedByEmployeeId String?
-  authorizedByEmployee   Employee? @relation("AuthorizedStoreCredit", fields: [authorizedByEmployeeId], references: [id])
+  id                      String    @id @default(cuid())
+  companyId               String
+  company                 Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  barcode                 String    @unique
+  amount                  Float
+  isUsed                  Boolean   @default(false)
+  createdAt               DateTime  @default(now())
+  usedAt                  DateTime?
+  transactionId           String?
+  redeemedTransactionId   String?
+  description             String?
+  issuedByEmployeeId      String?
+  issuedBy                Employee? @relation("IssuedByEmployee", fields: [issuedByEmployeeId], references: [id])
+  authorizedByEmployeeId  String?
+  authorizedBy            Employee? @relation("AuthorizedByEmployee", fields: [authorizedByEmployeeId], references: [id])
 }
 
 model ReceivingLog {
@@ -223,114 +214,113 @@ model ReceivingLog {
   company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   vendorId        String?
   vendor          Vendor?  @relation(fields: [vendorId], references: [id])
-  itemsJson       String?
   invoiceImageUrl String?
+  itemsJson       String?
   createdAt       DateTime @default(now())
 }
 
 model Payout {
-  id          String   @id @default(cuid())
-  amount      Float
-  reason      String
-  createdAt   DateTime @default(now())
-  companyId   String
-  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-}
-
-model ReturnPolicy {
-  id          String   @id @default(cuid())
-  type        String
-  itemId      String?
-  item        Item?    @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  categoryId  String?
-  category    Category? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  returnPeriodDays Int?
-  noReturns   Boolean  @default(false)
-  companyId   String
-  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-}
-
-model GiftCard {
-  id                    String   @id @default(cuid())
-  barcode               String   @unique
-  initialValue          Float
-  balance               Float
-  isPurchased           Boolean  @default(false)
-  purchasedAt           DateTime?
-  purchaseTransactionId String?
-  isActive              Boolean  @default(true)
-  expiresAt             DateTime?
-  createdAt             DateTime @default(now())
-  companyId             String
-  company               Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  usageHistory          GiftCardUsage[]
-}
-
-model GiftCardUsage {
-  id            String      @id @default(cuid())
-  giftCardId    String
-  giftCard      GiftCard    @relation(fields: [giftCardId], references: [id], onDelete: Cascade)
-  transactionId String?
-  transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: Cascade)
-  amount        Float
-  balanceAfter  Float
-  createdAt     DateTime    @default(now())
-}
-
-model Customer {
-  id            String   @id @default(cuid())
-  name          String?
-  phone         String
-  email         String?
-  loyaltyPoints Int      @default(0)
-  totalSpent    Float    @default(0)
-  visitCount    Int      @default(0)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  companyId     String
-  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  transactions  Transaction[]
-
-  @@unique([companyId, phone])
-}
-
-model AuditTrail {
   id              String   @id @default(cuid())
   companyId       String
   company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  action          String
-  entityType      String
-  entityId        String?
-  description     String
-  metadata        Json?
-  employeeId      String?
-  employee        Employee? @relation(fields: [employeeId], references: [id])
-  employeeName    String?
-  authorizedById  String?
-  authorizedBy    Employee? @relation("AuthorizedAuditTrail", fields: [authorizedById], references: [id])
-  authorizedByName String?
+  vendorId        String?
+  vendor          Vendor?  @relation(fields: [vendorId], references: [id])
+  amount          Float
+  receiptImageUrl String?
   createdAt       DateTime @default(now())
-
-  @@index([companyId, createdAt])
-  @@index([companyId, action])
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String?
-  password  String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  password      String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model ReturnPolicy {
+  id              String   @id @default(cuid())
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  targetType      String
+  targetId        String
+  returnPeriodDays Int?
+  noReturns        Boolean @default(false)
+  createdAt       DateTime @default(now())
+  
+  @@unique([companyId, targetType, targetId])
+}
+
+model Customer {
+  id           String   @id @default(cuid())
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  phone        String
+  name         String
+  email        String?
+  loyaltyPoints Int     @default(0)
+  totalSpent   Float    @default(0)
+  visitCount   Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  transactions Transaction[]
+  
+  @@unique([companyId, phone])
 }
 
 model LoyaltyConfig {
-  id              String   @id @default(cuid())
-  companyId       String   @unique
-  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  pointsPerDollar Float    @default(1)
-  rewardTiersJson String?
-  isEnabled       Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                  String   @id @default(cuid())
+  companyId           String   @unique
+  company             Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  pointsPerDollar     Float    @default(1)
+  rewardTiersJson     String?
+  isEnabled           Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model GiftCard {
+  id           String    @id @default(cuid())
+  companyId    String
+  company      Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  barcode      String    @unique
+  initialValue Float
+  balance      Float
+  isActive     Boolean   @default(true)
+  purchasedAt  DateTime?
+  purchaseTransactionId String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  
+  usageHistory GiftCardUsage[]
+}
+
+model GiftCardUsage {
+  id            String   @id @default(cuid())
+  giftCardId    String
+  giftCard      GiftCard @relation(fields: [giftCardId], references: [id], onDelete: Cascade)
+  transactionId String?
+  amount        Float
+  balanceAfter  Float
+  createdAt     DateTime @default(now())
+}
+
+model AuditTrail {
+  id           String   @id @default(cuid())
+  companyId    String
+  action       String
+  entityType   String
+  entityId     String?
+  description  String
+  employeeId   String?
+  employeeName String?
+  authorizedById String?
+  authorizedByName String?
+  metadata     String?
+  createdAt    DateTime @default(now())
+  
+  @@index([companyId, createdAt])
+  @@index([companyId, action])
 }
