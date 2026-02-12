@@ -1,0 +1,30 @@
+{
+  "name": "azadipos-server-setup",
+  "version": "1.0.0",
+  "description": "AzadiPOS Server Setup Tool",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^26.4.0",
+    "electron-builder": "^24.6.4"
+  },
+  "dependencies": {
+    "pg": "^8.11.3"
+  },
+  "build": {
+    "appId": "com.azadipos.serversetup",
+    "productName": "AzadiPOS Server Setup",
+    "win": {
+      "target": ["nsis", "portable"]
+    },
+    "extraResources": [
+      {
+        "from": "../prisma",
+        "to": "prisma"
+      }
+    ]
+  }
+}

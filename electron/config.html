@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AzadiPOS - Configuration</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      color: #fff;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .container {
+      width: 100%;
+      max-width: 500px;
+    }
+    .logo {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    .logo h1 {
+      font-size: 2rem;
+      color: #4ade80;
+    }
+    .logo p {
+      color: #94a3b8;
+      margin-top: 8px;
+    }
+    .card {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 16px;
+      padding: 32px;
+    }
+    .mode-selector {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    .mode-btn {
+      padding: 16px;
+      border: 2px solid rgba(255,255,255,0.2);
+      border-radius: 12px;
+      background: transparent;
+      color: #fff;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: center;
+    }
+    .mode-btn:hover {
+      border-color: rgba(74, 222, 128, 0.5);
+    }
+    .mode-btn.active {
+      border-color: #4ade80;
+      background: rgba(74, 222, 128, 0.1);
+    }
+    .mode-btn .icon {
+      font-size: 2rem;
+      margin-bottom: 8px;
+    }
+    .mode-btn .label {
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+    .mode-btn .desc {
+      font-size: 0.8rem;
+      color: #94a3b8;
+      margin-top: 4px;
+    }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    label {
+      display: block;
+      margin-bottom: 8px;
+      color: #94a3b8;
+      font-size: 0.9rem;
+    }
+    input, textarea {
+      width: 100%;
+      padding: 14px;
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 10px;
+      background: rgba(0,0,0,0.3);
+      color: #fff;
+      font-size: 1rem;
+      font-family: inherit;
+    }
+    input:focus, textarea:focus {
+      outline: none;
+      border-color: #4ade80;
+    }
+    textarea {
+      resize: none;
+      font-family: monospace;
+      font-size: 0.85rem;
+    }
+    .btn {
+      width: 100%;
+      padding: 16px;
+      border: none;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-top: 8px;
+    }
+    .btn-primary {
+      background: #4ade80;
+      color: #1a1a2e;
+    }
+    .btn-primary:hover {
+      background: #22c55e;
+    }
+    .btn-primary:disabled {
+      background: #4b5563;
+      color: #9ca3af;
+      cursor: not-allowed;
+    }
+    .btn-secondary {
+      background: rgba(255,255,255,0.1);
+      color: #fff;
+    }
+    .status {
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      font-size: 0.9rem;
+    }
+    .status.success {
+      background: rgba(74, 222, 128, 0.2);
+      border: 1px solid #4ade80;
+      color: #4ade80;
+    }
+    .status.error {
+      background: rgba(239, 68, 68, 0.2);
+      border: 1px solid #ef4444;
+      color: #ef4444;
+    }
+    .status.info {
+      background: rgba(59, 130, 246, 0.2);
+      border: 1px solid #3b82f6;
+      color: #93c5fd;
+    }
+    .loading {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #4ade80;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-right: 8px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .hidden { display: none; }
+    .help-text {
+      font-size: 0.8rem;
+      color: #64748b;
+      margin-top: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">
+      <h1>💻 AzadiPOS</h1>
+      <p>Point of Sale System</p>
+    </div>
+    
+    <div class="card">
+      <h2 style="margin-bottom: 20px; color: #fff;">Database Configuration</h2>
+      
+      <div class="mode-selector">
+        <button class="mode-btn active" id="modeServer" onclick="setMode('server')">
+          <div class="icon">🖥️</div>
+          <div class="label">This is the Server</div>
+          <div class="desc">Run database here</div>
+        </button>
+        <button class="mode-btn" id="modeTerminal" onclick="setMode('terminal')">
+          <div class="icon">📱</div>
+          <div class="label">Terminal Only</div>
+          <div class="desc">Connect to server</div>
+        </button>
+      </div>
+      
+      <div id="serverConfig">
+        <div class="form-group">
+          <label>PostgreSQL Host</label>
+          <input type="text" id="host" value="localhost" placeholder="localhost">
+        </div>
+        <div class="form-group">
+          <label>Port</label>
+          <input type="text" id="port" value="5432" placeholder="5432">
+        </div>
+        <div class="form-group">
+          <label>Username</label>
+          <input type="text" id="username" value="postgres" placeholder="postgres">
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="password" placeholder="Your PostgreSQL password">
+        </div>
+        <div class="form-group">
+          <label>Database Name</label>
+          <input type="text" id="dbName" value="azadipos" placeholder="azadipos">
+        </div>
+      </div>
+      
+      <div id="terminalConfig" class="hidden">
+        <div class="status info">
+          Enter the connection string from the Server Setup tool or from your server administrator.
+        </div>
+        <div class="form-group">
+          <label>Connection String</label>
+          <textarea id="connectionString" rows="3" placeholder="postgresql://user:password@192.168.1.100:5432/azadipos"></textarea>
+          <p class="help-text">Format: postgresql://username:password@server-ip:5432/database</p>
+        </div>
+      </div>
+      
+      <div id="statusDiv"></div>
+      
+      <button class="btn btn-secondary" id="testBtn" onclick="testConnection()">Test Connection</button>
+      <button class="btn btn-primary" id="startBtn" onclick="saveAndStart()" disabled>Connect & Start</button>
+    </div>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+    
+    let mode = 'server';
+    let connectionValid = false;
+    
+    function setMode(newMode) {
+      mode = newMode;
+      document.getElementById('modeServer').classList.toggle('active', mode === 'server');
+      document.getElementById('modeTerminal').classList.toggle('active', mode === 'terminal');
+      document.getElementById('serverConfig').classList.toggle('hidden', mode !== 'server');
+      document.getElementById('terminalConfig').classList.toggle('hidden', mode !== 'terminal');
+      connectionValid = false;
+      document.getElementById('startBtn').disabled = true;
+      document.getElementById('statusDiv').innerHTML = '';
+    }
+    
+    function getConnectionString() {
+      if (mode === 'terminal') {
+        return document.getElementById('connectionString').value.trim();
+      }
+      const host = document.getElementById('host').value;
+      const port = document.getElementById('port').value;
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      const dbName = document.getElementById('dbName').value;
+      return `postgresql://${username}:${encodeURIComponent(password)}@${host}:${port}/${dbName}`;
+    }
+    
+    async function testConnection() {
+      const btn = document.getElementById('testBtn');
+      const status = document.getElementById('statusDiv');
+      
+      btn.innerHTML = '<span class="loading"></span>Testing...';
+      btn.disabled = true;
+      
+      const connStr = getConnectionString();
+      const result = await ipcRenderer.invoke('test-connection', connStr);
+      
+      if (result.success) {
+        status.innerHTML = '<div class="status success">✓ Connected successfully!</div>';
+        connectionValid = true;
+        document.getElementById('startBtn').disabled = false;
+      } else {
+        status.innerHTML = `<div class="status error">✗ Connection failed: ${result.error}</div>`;
+        connectionValid = false;
+        document.getElementById('startBtn').disabled = true;
+      }
+      
+      btn.innerHTML = 'Test Connection';
+      btn.disabled = false;
+    }
+    
+    async function saveAndStart() {
+      const btn = document.getElementById('startBtn');
+      const status = document.getElementById('statusDiv');
+      
+      btn.innerHTML = '<span class="loading"></span>Starting...';
+      btn.disabled = true;
+      
+      const config = {
+        mode,
+        databaseUrl: getConnectionString(),
+      };
+      
+      await ipcRenderer.invoke('save-config', config);
+      const result = await ipcRenderer.invoke('start-app');
+      
+      if (!result.success) {
+        status.innerHTML = `<div class="status error">✗ Failed to start: ${result.error}</div>`;
+        btn.innerHTML = 'Connect & Start';
+        btn.disabled = false;
+      }
+    }
+    
+    // Load saved config on startup
+    async function init() {
+      const config = await ipcRenderer.invoke('load-config');
+      if (config) {
+        if (config.mode === 'terminal') {
+          setMode('terminal');
+          document.getElementById('connectionString').value = config.databaseUrl || '';
+        } else {
+          // Try to parse the URL
+          try {
+            const url = new URL(config.databaseUrl);
+            document.getElementById('host').value = url.hostname;
+            document.getElementById('port').value = url.port || '5432';
+            document.getElementById('username').value = url.username;
+            document.getElementById('password').value = decodeURIComponent(url.password);
+            document.getElementById('dbName').value = url.pathname.slice(1);
+          } catch (e) {}
+        }
+      }
+    }
+    
+    init();
+  </script>
+</body>
+</html>

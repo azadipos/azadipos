@@ -1,4 +1,4 @@
-name: Build Windows installer
+name: Build Windows Installers
 
 on:
   push:
@@ -18,7 +18,7 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install dependencies
+      - name: Install main app dependencies
         run: npm install --legacy-peer-deps
 
       - name: Generate Prisma Client for Windows
@@ -72,38 +72,52 @@ jobs:
           New-Item -ItemType Directory -Force -Path ".next/standalone/prisma" | Out-Null
           Copy-Item -Force "prisma/schema.prisma" ".next/standalone/prisma/"
           
-          # Create .env with REAL database credentials
-          Write-Host "Creating .env with database credentials..." -ForegroundColor Yellow
+          # Create minimal .env (DATABASE_URL will be set by config screen)
+          Write-Host "Creating placeholder .env..." -ForegroundColor Yellow
           $envContent = @"
-          DATABASE_URL=$env:DB_URL
           NEXTAUTH_SECRET=$env:AUTH_SECRET
           NEXTAUTH_URL=http://localhost:3000
           "@
           $envContent | Out-File -FilePath ".next/standalone/.env" -Encoding ASCII
           
-          # Verify .env was created (without showing secrets)
-          if (Test-Path ".next/standalone/.env") {
-            Write-Host ".env created successfully" -ForegroundColor Green
-          } else {
-            Write-Host "FATAL: .env not created" -ForegroundColor Red
-            exit 1
-          }
-          
-          # List final structure
-          Write-Host "`n=== STANDALONE STRUCTURE ===" -ForegroundColor Cyan
-          Get-ChildItem ".next/standalone" | ForEach-Object { Write-Host "  $_" }
-          
-          Write-Host "`n=== .next FOLDER ===" -ForegroundColor Cyan
-          Get-ChildItem ".next/standalone/.next" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $_" }
-          
-          Write-Host "`nPreparation complete!" -ForegroundColor Green
+          Write-Host "Preparation complete!" -ForegroundColor Green
 
-      - name: Package Electron
+      - name: Package Main App
         run: npx electron-builder --win --x64 --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Show artifacts
+      - name: Rename main app artifacts
+        shell: pwsh
+        run: |
+          if (Test-Path "dist/*.exe") {
+            Get-ChildItem "dist/*.exe" | ForEach-Object {
+              $newName = $_.Name -replace "Azadi POS", "AzadiPOS"
+              if ($_.Name -ne $newName) {
+                Rename-Item $_.FullName -NewName $newName
+              }
+            }
+          }
+
+      # Build Server Setup Tool
+      - name: Install Server Setup dependencies
+        working-directory: server-setup
+        run: npm install --legacy-peer-deps
+
+      - name: Package Server Setup Tool
+        working-directory: server-setup
+        run: npx electron-builder --win --x64 --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Move Server Setup artifacts
+        shell: pwsh
+        run: |
+          if (Test-Path "server-setup/dist/*.exe") {
+            Copy-Item "server-setup/dist/*.exe" "dist/"
+          }
+
+      - name: Show all artifacts
         shell: pwsh
         run: |
           Write-Host "=== BUILD ARTIFACTS ===" -ForegroundColor Cyan
@@ -114,9 +128,9 @@ jobs:
             }
           }
 
-      - name: Upload artifacts
+      - name: Upload all artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: windows-installers
+          name: azadipos-windows-installers
           path: dist/*.exe
           retention-days: 30

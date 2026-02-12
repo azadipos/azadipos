@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AzadiPOS Server Setup</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      color: #fff;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 10px;
+      color: #4ade80;
+    }
+    .subtitle {
+      text-align: center;
+      color: #94a3b8;
+      margin-bottom: 30px;
+    }
+    .card {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 20px;
+    }
+    .card h2 {
+      color: #4ade80;
+      margin-bottom: 16px;
+      font-size: 1.2rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .step-number {
+      background: #4ade80;
+      color: #1a1a2e;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 0.9rem;
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    label {
+      display: block;
+      margin-bottom: 6px;
+      color: #94a3b8;
+      font-size: 0.9rem;
+    }
+    input {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 8px;
+      background: rgba(0,0,0,0.3);
+      color: #fff;
+      font-size: 1rem;
+    }
+    input:focus {
+      outline: none;
+      border-color: #4ade80;
+    }
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    button {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-primary {
+      background: #4ade80;
+      color: #1a1a2e;
+      font-weight: 600;
+    }
+    .btn-primary:hover {
+      background: #22c55e;
+    }
+    .btn-primary:disabled {
+      background: #4b5563;
+      color: #9ca3af;
+      cursor: not-allowed;
+    }
+    .btn-secondary {
+      background: rgba(255,255,255,0.1);
+      color: #fff;
+    }
+    .btn-secondary:hover {
+      background: rgba(255,255,255,0.2);
+    }
+    .status {
+      padding: 12px;
+      border-radius: 8px;
+      margin-top: 12px;
+      font-size: 0.9rem;
+    }
+    .status.success {
+      background: rgba(74, 222, 128, 0.2);
+      border: 1px solid #4ade80;
+      color: #4ade80;
+    }
+    .status.error {
+      background: rgba(239, 68, 68, 0.2);
+      border: 1px solid #ef4444;
+      color: #ef4444;
+    }
+    .status.info {
+      background: rgba(59, 130, 246, 0.2);
+      border: 1px solid #3b82f6;
+      color: #93c5fd;
+    }
+    .connection-string {
+      background: rgba(0,0,0,0.5);
+      padding: 16px;
+      border-radius: 8px;
+      font-family: monospace;
+      word-break: break-all;
+      margin: 12px 0;
+      border: 1px solid rgba(74, 222, 128, 0.3);
+    }
+    .copy-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .ip-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .ip-tag {
+      background: rgba(59, 130, 246, 0.2);
+      border: 1px solid #3b82f6;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 0.85rem;
+    }
+    .info-box {
+      background: rgba(59, 130, 246, 0.1);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 20px;
+    }
+    .info-box h3 {
+      color: #93c5fd;
+      margin-bottom: 8px;
+    }
+    .info-box p {
+      color: #94a3b8;
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+    .info-box a {
+      color: #4ade80;
+    }
+    .loading {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #4ade80;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-right: 8px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🖥️ AzadiPOS Server Setup</h1>
+    <p class="subtitle">Configure your PostgreSQL database server for the POS system</p>
+
+    <div class="info-box">
+      <h3>📋 Before You Begin</h3>
+      <p>
+        This tool helps you set up a PostgreSQL database server that your POS terminals will connect to.
+        <br><br>
+        <strong>Need PostgreSQL?</strong> Download it from 
+        <a href="https://www.postgresql.org/download/windows/" target="_blank">postgresql.org</a>
+        <br>
+        During installation, remember the password you set for the "postgres" user.
+      </p>
+    </div>
+
+    <!-- Step 1: PostgreSQL Connection -->
+    <div class="card">
+      <h2><span class="step-number">1</span> PostgreSQL Connection</h2>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Host</label>
+          <input type="text" id="host" value="localhost" placeholder="localhost or IP">
+        </div>
+        <div class="form-group">
+          <label>Port</label>
+          <input type="text" id="port" value="5432" placeholder="5432">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Username</label>
+          <input type="text" id="username" value="postgres" placeholder="postgres">
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="password" placeholder="Your PostgreSQL password">
+        </div>
+      </div>
+      <button class="btn-primary" id="testConnection">Test Connection</button>
+      <div id="connectionStatus"></div>
+    </div>
+
+    <!-- Step 2: Create Database -->
+    <div class="card">
+      <h2><span class="step-number">2</span> Create Database</h2>
+      <div class="form-group">
+        <label>Database Name</label>
+        <input type="text" id="dbName" value="azadipos" placeholder="azadipos">
+      </div>
+      <button class="btn-primary" id="createDb" disabled>Create Database</button>
+      <div id="dbStatus"></div>
+    </div>
+
+    <!-- Step 3: Setup Tables -->
+    <div class="card">
+      <h2><span class="step-number">3</span> Setup Database Tables</h2>
+      <p style="color: #94a3b8; margin-bottom: 12px;">This will create all the tables needed for the POS system.</p>
+      <button class="btn-primary" id="runMigrations" disabled>Setup Tables</button>
+      <div id="migrationStatus"></div>
+    </div>
+
+    <!-- Step 4: Connection Info -->
+    <div class="card">
+      <h2><span class="step-number">4</span> Connection Information for Terminals</h2>
+      <p style="color: #94a3b8; margin-bottom: 12px;">Share this information with your POS terminals:</p>
+      
+      <label>This Computer's IP Addresses:</label>
+      <div class="ip-list" id="ipList">Loading...</div>
+      
+      <label style="margin-top: 16px;">Connection String (for terminals):</label>
+      <div class="connection-string" id="connectionString">Complete steps 1-3 first</div>
+      <button class="btn-secondary copy-btn" id="copyBtn" disabled>
+        📋 Copy to Clipboard
+      </button>
+      
+      <div class="status info" style="margin-top: 16px;">
+        <strong>💡 Tip:</strong> Use your IP address (not "localhost") when configuring other computers to connect to this server.
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+
+    let connectionValid = false;
+    let dbCreated = false;
+
+    // Load saved config on startup
+    async function loadSavedConfig() {
+      const result = await ipcRenderer.invoke('load-config');
+      if (result.success && result.config) {
+        document.getElementById('host').value = result.config.host || 'localhost';
+        document.getElementById('port').value = result.config.port || '5432';
+        document.getElementById('username').value = result.config.username || 'postgres';
+        document.getElementById('dbName').value = result.config.dbName || 'azadipos';
+      }
+    }
+
+    // Get local IPs
+    async function loadLocalIPs() {
+      const ips = await ipcRenderer.invoke('get-local-ips');
+      const ipList = document.getElementById('ipList');
+      if (ips.length === 0) {
+        ipList.innerHTML = '<span class="ip-tag">localhost (127.0.0.1)</span>';
+      } else {
+        ipList.innerHTML = ips.map(ip => 
+          `<span class="ip-tag">${ip.name}: ${ip.address}</span>`
+        ).join('');
+      }
+    }
+
+    // Test connection
+    document.getElementById('testConnection').addEventListener('click', async () => {
+      const btn = document.getElementById('testConnection');
+      const status = document.getElementById('connectionStatus');
+      
+      btn.innerHTML = '<span class="loading"></span>Testing...';
+      btn.disabled = true;
+      
+      const config = {
+        host: document.getElementById('host').value,
+        port: document.getElementById('port').value,
+        username: document.getElementById('username').value,
+        password: document.getElementById('password').value,
+      };
+      
+      const result = await ipcRenderer.invoke('test-connection', config);
+      
+      if (result.success) {
+        status.className = 'status success';
+        status.textContent = '✓ Connected to PostgreSQL successfully!';
+        connectionValid = true;
+        document.getElementById('createDb').disabled = false;
+      } else {
+        status.className = 'status error';
+        status.textContent = '✗ Connection failed: ' + result.error;
+        connectionValid = false;
+      }
+      
+      btn.innerHTML = 'Test Connection';
+      btn.disabled = false;
+    });
+
+    // Create database
+    document.getElementById('createDb').addEventListener('click', async () => {
+      const btn = document.getElementById('createDb');
+      const status = document.getElementById('dbStatus');
+      
+      btn.innerHTML = '<span class="loading"></span>Creating...';
+      btn.disabled = true;
+      
+      const config = {
+        host: document.getElementById('host').value,
+        port: document.getElementById('port').value,
+        username: document.getElementById('username').value,
+        password: document.getElementById('password').value,
+        dbName: document.getElementById('dbName').value,
+      };
+      
+      const result = await ipcRenderer.invoke('create-database', config);
+      
+      if (result.success) {
+        status.className = 'status success';
+        status.textContent = result.created 
+          ? '✓ Database created successfully!' 
+          : '✓ Database already exists!';
+        dbCreated = true;
+        document.getElementById('runMigrations').disabled = false;
+        
+        // Save config
+        await ipcRenderer.invoke('save-config', config);
+      } else {
+        status.className = 'status error';
+        status.textContent = '✗ Failed: ' + result.error;
+      }
+      
+      btn.innerHTML = 'Create Database';
+      btn.disabled = !connectionValid;
+    });
+
+    // Run migrations
+    document.getElementById('runMigrations').addEventListener('click', async () => {
+      const btn = document.getElementById('runMigrations');
+      const status = document.getElementById('migrationStatus');
+      
+      btn.innerHTML = '<span class="loading"></span>Setting up tables...';
+      btn.disabled = true;
+      
+      const config = {
+        host: document.getElementById('host').value,
+        port: document.getElementById('port').value,
+        username: document.getElementById('username').value,
+        password: document.getElementById('password').value,
+        dbName: document.getElementById('dbName').value,
+      };
+      
+      const result = await ipcRenderer.invoke('run-migrations', config);
+      
+      if (result.success) {
+        status.className = 'status success';
+        status.textContent = '✓ Database tables created successfully!';
+        
+        // Update connection string
+        const connStr = await ipcRenderer.invoke('generate-connection-string', config);
+        document.getElementById('connectionString').textContent = connStr;
+        document.getElementById('copyBtn').disabled = false;
+      } else {
+        status.className = 'status error';
+        status.textContent = '✗ Failed: ' + result.error;
+      }
+      
+      btn.innerHTML = 'Setup Tables';
+      btn.disabled = !dbCreated;
+    });
+
+    // Copy connection string
+    document.getElementById('copyBtn').addEventListener('click', () => {
+      const connStr = document.getElementById('connectionString').textContent;
+      navigator.clipboard.writeText(connStr);
+      
+      const btn = document.getElementById('copyBtn');
+      btn.textContent = '✓ Copied!';
+      setTimeout(() => {
+        btn.innerHTML = '📋 Copy to Clipboard';
+      }, 2000);
+    });
+
+    // Initialize
+    loadSavedConfig();
+    loadLocalIPs();
+  </script>
+</body>
+</html>
