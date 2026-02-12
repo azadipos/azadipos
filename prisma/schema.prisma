@@ -168,7 +168,7 @@ model Transaction {
   items                 TransactionItem[]
   storeCredits          StoreCredit[]
   redeemedStoreCredits  StoreCredit[] @relation("RedeemedTransaction")
-  giftCardRedemptions   GiftCardRedemption[]
+  giftCardUsages        GiftCardUsage[]
 
   @@unique([companyId, transactionNumber])
 }
@@ -256,28 +256,30 @@ model ReturnPolicy {
 }
 
 model GiftCard {
-  id            String   @id @default(cuid())
-  barcode       String   @unique
-  initialValue  Float
-  currentBalance Float
-  isPurchased   Boolean  @default(false)
-  purchasedAt   DateTime?
-  isActive      Boolean  @default(true)
-  expiresAt     DateTime?
-  createdAt     DateTime @default(now())
-  companyId     String
-  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  redemptions   GiftCardRedemption[]
+  id                    String   @id @default(cuid())
+  barcode               String   @unique
+  initialValue          Float
+  balance               Float
+  isPurchased           Boolean  @default(false)
+  purchasedAt           DateTime?
+  purchaseTransactionId String?
+  isActive              Boolean  @default(true)
+  expiresAt             DateTime?
+  createdAt             DateTime @default(now())
+  companyId             String
+  company               Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  usageHistory          GiftCardUsage[]
 }
 
-model GiftCardRedemption {
-  id            String   @id @default(cuid())
+model GiftCardUsage {
+  id            String      @id @default(cuid())
   giftCardId    String
-  giftCard      GiftCard @relation(fields: [giftCardId], references: [id], onDelete: Cascade)
-  transactionId String
-  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  giftCard      GiftCard    @relation(fields: [giftCardId], references: [id], onDelete: Cascade)
+  transactionId String?
+  transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: Cascade)
   amount        Float
-  createdAt     DateTime @default(now())
+  balanceAfter  Float
+  createdAt     DateTime    @default(now())
 }
 
 model Customer {
