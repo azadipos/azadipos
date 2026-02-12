@@ -73,7 +73,8 @@ export async function POST(req: NextRequest) {
         employeeName,
         authorizedById,
         authorizedByName,
-        metadata: metadata ? JSON.stringify(metadata) : null,
+        // Use spread to only include metadata when it exists (avoids Prisma null type issue)
+        ...(metadata && { metadata: JSON.stringify(metadata) }),
       },
     });
     
