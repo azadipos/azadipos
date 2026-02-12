@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog } = require('electron');
+const { app, BrowserWindow, Menu } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 const http = require('http');
@@ -7,6 +7,9 @@ const fs = require('fs');
 const isDev = !app.isPackaged;
 let mainWindow;
 let nextProcess;
+
+// Remove the default menu bar
+Menu.setApplicationMenu(null);
 
 // Logging helper
 function log(message) {
@@ -44,84 +47,81 @@ function waitForServer(url, timeout = 60000, interval = 500) {
   });
 }
 
-// Get the path to the standalone server
-function getServerPath() {
+// Get the base path for the app
+function getAppBasePath() {
   if (isDev) {
-    // In development, use next dev
-    return null;
+    return path.join(__dirname, '..');
   }
   
-  // In production, find server.js in the packaged app
-  // With asar: true, app.getAppPath() returns path to app.asar
-  const appPath = app.getAppPath();
-  const serverPath = path.join(appPath, '.next', 'standalone', 'server.js');
-  
-  log(`App path: ${appPath}`);
-  log(`Looking for server at: ${serverPath}`);
-  
-  return serverPath;
+  // In production with asar, app.getAppPath() returns the asar archive path
+  // But we need to access files inside it
+  return app.getAppPath();
 }
 
 // Start the Next.js server
 function startNextServer() {
   if (isDev) {
-    log('Development mode - assuming Next.js dev server is running');
+    log('Development mode - assuming Next.js dev server is running externally');
     return null;
   }
   
-  const serverPath = getServerPath();
+  const basePath = getAppBasePath();
+  const serverPath = path.join(basePath, '.next', 'standalone', 'server.js');
+  const standalonePath = path.join(basePath, '.next', 'standalone');
   
-  if (!serverPath) {
-    log('No server path found');
-    return null;
+  log(`Base path: ${basePath}`);
+  log(`Server path: ${serverPath}`);
+  log(`Standalone path: ${standalonePath}`);
+  
+  // Debug: List contents
+  try {
+    log(`Contents of base path: ${fs.readdirSync(basePath).join(', ')}`);
+    
+    const nextDir = path.join(basePath, '.next');
+    if (fs.existsSync(nextDir)) {
+      log(`Contents of .next: ${fs.readdirSync(nextDir).join(', ')}`);
+      
+      if (fs.existsSync(standalonePath)) {
+        log(`Contents of standalone: ${fs.readdirSync(standalonePath).join(', ')}`);
+        
+        // Check for .next inside standalone
+        const standaloneNextDir = path.join(standalonePath, '.next');
+        if (fs.existsSync(standaloneNextDir)) {
+          log(`Contents of standalone/.next: ${fs.readdirSync(standaloneNextDir).join(', ')}`);
+        }
+        
+        // Check for public inside standalone
+        const standalonePublicDir = path.join(standalonePath, 'public');
+        if (fs.existsSync(standalonePublicDir)) {
+          log(`Contents of standalone/public: ${fs.readdirSync(standalonePublicDir).join(', ')}`);
+        }
+      }
+    }
+  } catch (e) {
+    log(`Error listing directories: ${e.message}`);
   }
   
   // Check if server.js exists
-  try {
-    // Note: When using asar, fs.existsSync works on files inside the archive
-    if (!fs.existsSync(serverPath)) {
-      log(`Server not found at: ${serverPath}`);
-      
-      // Debug: List what's in the app path
-      const appPath = app.getAppPath();
-      try {
-        const contents = fs.readdirSync(appPath);
-        log(`Contents of ${appPath}: ${contents.join(', ')}`);
-        
-        const nextPath = path.join(appPath, '.next');
-        if (fs.existsSync(nextPath)) {
-          const nextContents = fs.readdirSync(nextPath);
-          log(`Contents of .next: ${nextContents.join(', ')}`);
-          
-          const standalonePath = path.join(nextPath, 'standalone');
-          if (fs.existsSync(standalonePath)) {
-            const standaloneContents = fs.readdirSync(standalonePath);
-            log(`Contents of .next/standalone: ${standaloneContents.join(', ')}`);
-          }
-        }
-      } catch (e) {
-        log(`Error listing directories: ${e.message}`);
-      }
-      
-      return null;
-    }
-  } catch (e) {
-    log(`Error checking server path: ${e.message}`);
+  if (!fs.existsSync(serverPath)) {
+    log(`ERROR: server.js not found at: ${serverPath}`);
+    return null;
   }
   
   log('Starting Next.js standalone server...');
-  
-  // Set working directory to standalone folder
-  const standalonePath = path.dirname(serverPath);
   
   // Environment for the server
   const env = {
     ...process.env,
     NODE_ENV: 'production',
     PORT: '3000',
-    HOSTNAME: 'localhost'
+    HOSTNAME: 'localhost',
+    // Tell Next.js where to find static files
+    __NEXT_PRIVATE_STANDALONE_CONFIG: JSON.stringify({
+      distDir: '.next'
+    })
   };
   
+  // Start the server using the same Node executable that's running Electron
   const proc = spawn(process.execPath, [serverPath], {
     cwd: standalonePath,
     env: env,
@@ -158,10 +158,13 @@ async function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      devTools: true // Enable devtools for debugging
     },
     show: false,
-    backgroundColor: '#1a1a1a'
+    backgroundColor: '#111827', // Match our app's dark background
+    autoHideMenuBar: true, // Hide menu bar
+    frame: true
   });
   
   const appUrl = 'http://localhost:3000';
@@ -175,12 +178,13 @@ async function createWindow() {
   } else {
     log('Server failed to start');
     mainWindow.loadURL(`data:text/html;charset=utf-8,
+      <!DOCTYPE html>
       <html>
         <head><title>Azadi POS - Error</title></head>
-        <body style="background:#1a1a1a;color:white;font-family:system-ui,sans-serif;padding:40px;text-align:center;">
+        <body style="background:#111827;color:white;font-family:system-ui,sans-serif;padding:40px;text-align:center;">
           <h1 style="color:#ef4444;">Failed to Start Application</h1>
           <p style="color:#9ca3af;margin:20px 0;">The application server could not be started.</p>
-          <p style="color:#6b7280;font-size:14px;">Please try restarting the application or contact support.</p>
+          <p style="color:#6b7280;font-size:14px;">Please check the console (Ctrl+Shift+I) for details.</p>
           <button onclick="location.reload()" style="margin-top:20px;padding:10px 20px;background:#3b82f6;color:white;border:none;border-radius:6px;cursor:pointer;">
             Retry
           </button>
@@ -189,24 +193,27 @@ async function createWindow() {
     `);
   }
   
+  // Show window when ready
   mainWindow.once('ready-to-show', () => {
     log('Window ready to show');
     mainWindow.show();
   });
   
+  // Handle window close
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
   
-  // Open DevTools in development
-  if (isDev) {
-    mainWindow.webContents.openDevTools();
-  }
+  // Open DevTools automatically for debugging (remove in final production)
+  mainWindow.webContents.openDevTools();
 }
 
 // App lifecycle
 app.on('ready', async () => {
   log(`App ready. Packaged: ${app.isPackaged}, Platform: ${process.platform}`);
+  log(`App path: ${app.getAppPath()}`);
+  log(`Resource path: ${process.resourcesPath}`);
+  log(`Executable path: ${process.execPath}`);
   
   // Start the Next.js server in production
   if (!isDev) {
@@ -214,7 +221,7 @@ app.on('ready', async () => {
     
     // Give the server time to initialize
     log('Waiting for server to initialize...');
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await new Promise(resolve => setTimeout(resolve, 3000));
   }
   
   await createWindow();

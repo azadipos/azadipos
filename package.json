@@ -1,7 +1,7 @@
 {
-  "name": "retail-pos",
+  "name": "azadi-pos",
   "version": "1.0.0",
-  "description": "Retail POS System - Desktop Application",
+  "description": "Azadi POS - Retail Point of Sale System",
   "author": "Azadi POS",
   "private": true,
   "scripts": {
@@ -19,8 +19,8 @@
     "productName": "Azadi POS",
     "asar": true,
     "asarUnpack": [
-      "node_modules/@prisma/**/*",
-      "node_modules/.prisma/**/*"
+      "node_modules/.prisma/**/*",
+      "node_modules/@prisma/client/**/*"
     ],
     "directories": {
       "buildResources": "build-resources",
@@ -29,7 +29,7 @@
     "files": [
       "electron/**/*",
       ".next/standalone/**/*",
-      "prisma/**/*",
+      "prisma/schema.prisma",
       "!**/*.map",
       "!**/node_modules/.cache/**"
     ],

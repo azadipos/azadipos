@@ -31,54 +31,86 @@ jobs:
           NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
           NEXTAUTH_URL: http://localhost:3000
 
-      - name: Prepare standalone build
-        shell: bash
+      - name: Prepare standalone build for Electron
+        shell: pwsh
         run: |
-          echo "=== Preparing Next.js standalone for Electron ==="
+          Write-Host "=== Preparing Next.js standalone for Electron ===" -ForegroundColor Green
           
           # Verify standalone was created
-          if [ ! -d ".next/standalone" ]; then
-            echo "ERROR: .next/standalone directory not found!"
+          if (-not (Test-Path ".next/standalone")) {
+            Write-Host "ERROR: .next/standalone directory not found!" -ForegroundColor Red
             exit 1
-          fi
+          }
           
-          # Copy static files into standalone
-          echo "Copying static files..."
-          mkdir -p .next/standalone/.next/static
-          cp -r .next/static/* .next/standalone/.next/static/
+          Write-Host "Standalone directory found. Contents:"
+          Get-ChildItem ".next/standalone" | ForEach-Object { Write-Host "  $_" }
           
-          # Copy public folder into standalone
-          echo "Copying public folder..."
-          mkdir -p .next/standalone/public
-          cp -r public/* .next/standalone/public/
+          # Copy static files into standalone/.next/static
+          Write-Host "`nCopying .next/static to standalone..." -ForegroundColor Yellow
+          if (Test-Path ".next/static") {
+            New-Item -ItemType Directory -Force -Path ".next/standalone/.next/static" | Out-Null
+            Copy-Item -Recurse -Force ".next/static/*" ".next/standalone/.next/static/"
+            Write-Host "Static files copied successfully"
+          } else {
+            Write-Host "WARNING: .next/static not found" -ForegroundColor Yellow
+          }
           
-          # Copy prisma schema (needed for client)
-          echo "Copying prisma schema..."
-          mkdir -p .next/standalone/prisma
-          cp prisma/schema.prisma .next/standalone/prisma/
+          # Copy public folder into standalone/public
+          Write-Host "`nCopying public folder to standalone..." -ForegroundColor Yellow
+          if (Test-Path "public") {
+            New-Item -ItemType Directory -Force -Path ".next/standalone/public" | Out-Null
+            Copy-Item -Recurse -Force "public/*" ".next/standalone/public/"
+            Write-Host "Public folder copied successfully"
+          } else {
+            Write-Host "WARNING: public folder not found" -ForegroundColor Yellow
+          }
           
-          # Create .env file in standalone with placeholder
-          echo "Creating .env placeholder..."
-          cat > .next/standalone/.env << 'ENV'
+          # Create .env file in standalone
+          Write-Host "`nCreating .env in standalone..." -ForegroundColor Yellow
+          @"
           DATABASE_URL=file:./pos.db
-          NEXTAUTH_SECRET=local-development-secret-key-change-in-production
+          NEXTAUTH_SECRET=electron-local-secret-key-change-me
           NEXTAUTH_URL=http://localhost:3000
-          ENV
+          "@ | Out-File -FilePath ".next/standalone/.env" -Encoding UTF8
           
-          echo "Standalone build prepared successfully!"
-          echo "Contents of .next/standalone:"
-          ls -la .next/standalone/
+          # Verify final structure
+          Write-Host "`n=== Final standalone structure ===" -ForegroundColor Green
+          Write-Host "Root:"
+          Get-ChildItem ".next/standalone" | ForEach-Object { Write-Host "  $_" }
+          
+          if (Test-Path ".next/standalone/.next") {
+            Write-Host ".next:"
+            Get-ChildItem ".next/standalone/.next" | ForEach-Object { Write-Host "    $_" }
+          }
+          
+          if (Test-Path ".next/standalone/.next/static") {
+            Write-Host ".next/static:"
+            Get-ChildItem ".next/standalone/.next/static" | ForEach-Object { Write-Host "      $_" }
+          }
+          
+          if (Test-Path ".next/standalone/public") {
+            Write-Host "public:"
+            Get-ChildItem ".next/standalone/public" | ForEach-Object { Write-Host "    $_" }
+          }
+          
+          Write-Host "`nStandalone build prepared successfully!" -ForegroundColor Green
 
       - name: Package Electron (Windows)
         run: npx electron-builder --win --x64 --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: List dist contents
-        shell: bash
+      - name: List build output
+        shell: pwsh
         run: |
-          echo "=== Build artifacts ==="
-          ls -la dist/ || echo "No dist folder"
+          Write-Host "=== Build artifacts ===" -ForegroundColor Green
+          if (Test-Path "dist") {
+            Get-ChildItem "dist" -Recurse | Where-Object { $_.Extension -in '.exe', '.zip' } | ForEach-Object {
+              Write-Host "$($_.Name) - $([math]::Round($_.Length / 1MB, 2)) MB"
+            }
+          } else {
+            Write-Host "No dist folder found"
+          }
 
       - name: Upload installers
         uses: actions/upload-artifact@v4
