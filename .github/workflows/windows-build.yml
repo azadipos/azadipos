@@ -31,39 +31,54 @@ jobs:
           NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
           NEXTAUTH_URL: http://localhost:3000
 
+      - name: Debug standalone output
+        shell: pwsh
+        run: |
+          Write-Host "=== Checking .next directory ===" -ForegroundColor Yellow
+          if (Test-Path ".next") {
+            Get-ChildItem ".next" | ForEach-Object { Write-Host "  $_" }
+          } else {
+            Write-Host "  .next NOT FOUND" -ForegroundColor Red
+          }
+          
+          Write-Host "`n=== Checking .next/standalone ===" -ForegroundColor Yellow
+          if (Test-Path ".next/standalone") {
+            Get-ChildItem ".next/standalone" | ForEach-Object { Write-Host "  $_" }
+            
+            Write-Host "`n=== Looking for server.js ===" -ForegroundColor Yellow
+            Get-ChildItem ".next/standalone" -Filter "*.js" -Recurse | Select-Object -First 20 | ForEach-Object { Write-Host "  $($_.FullName)" }
+          } else {
+            Write-Host "  .next/standalone NOT FOUND" -ForegroundColor Red
+          }
+
       - name: Prepare standalone for packaging
         shell: pwsh
         run: |
-          Write-Host "=== PREPARING STANDALONE BUILD ===" -ForegroundColor Green
+          Write-Host "=== PREPARING STANDALONE ===" -ForegroundColor Green
           
-          if (-not (Test-Path ".next/standalone")) {
-            Write-Host "FATAL: .next/standalone not found!" -ForegroundColor Red
+          if (-not (Test-Path ".next/standalone/server.js")) {
+            Write-Host "server.js not found in .next/standalone/" -ForegroundColor Red
+            Write-Host "Checking for alternate locations..." -ForegroundColor Yellow
+            Get-ChildItem ".next" -Recurse -Filter "server.js" | ForEach-Object { Write-Host "Found: $($_.FullName)" }
             exit 1
           }
           
-          Write-Host "Standalone directory found"
+          Write-Host "server.js found!" -ForegroundColor Green
           
-          Write-Host "Copying static files..."
           New-Item -ItemType Directory -Force -Path ".next/standalone/.next/static" | Out-Null
           Copy-Item -Recurse -Force ".next/static/*" ".next/standalone/.next/static/"
+          Write-Host "Static files copied"
           
-          Write-Host "Copying public folder..."
           New-Item -ItemType Directory -Force -Path ".next/standalone/public" | Out-Null
           Copy-Item -Recurse -Force "public/*" ".next/standalone/public/"
+          Write-Host "Public folder copied"
           
-          Write-Host "Creating .env file..."
           Set-Content -Path ".next/standalone/.env" -Value "DATABASE_URL=file:./data.db`nNEXTAUTH_SECRET=electron-secret`nNEXTAUTH_URL=http://localhost:3000"
+          Write-Host "env file created"
           
-          Write-Host "Verifying critical files..."
-          $ok = $true
-          if (-not (Test-Path ".next/standalone/server.js")) { Write-Host "MISSING: server.js" -ForegroundColor Red; $ok = $false }
-          if (-not (Test-Path ".next/standalone/.next/static")) { Write-Host "MISSING: .next/static" -ForegroundColor Red; $ok = $false }
-          if (-not (Test-Path ".next/standalone/public")) { Write-Host "MISSING: public" -ForegroundColor Red; $ok = $false }
-          
-          if (-not $ok) { exit 1 }
-          Write-Host "Standalone preparation complete" -ForegroundColor Green
+          Write-Host "=== DONE ===" -ForegroundColor Green
 
-      - name: Package Electron for Windows
+      - name: Package Electron
         run: npx electron-builder --win --x64 --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
