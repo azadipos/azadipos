@@ -1,5 +1,5 @@
 generator client {
-    provider = "prisma-client-js"
+    provider      = "prisma-client-js"
     binaryTargets = ["native", "windows", "debian-openssl-3.0.x"]
 }
 
@@ -32,15 +32,16 @@ model Company {
 }
 
 model Category {
-  id          String  @id @default(cuid())
-  name        String
-  taxRate     Float   @default(0)
+  id              String   @id @default(cuid())
+  name            String
+  taxRate         Float    @default(0)
+  isAgeRestricted Boolean  @default(false)
   returnPeriodDays Int?
-  noReturns   Boolean @default(false)
-  companyId   String
-  company     Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  items       Item[]
-  returnPolicies ReturnPolicy[]
+  noReturns       Boolean  @default(false)
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  items           Item[]
+  returnPolicies  ReturnPolicy[]
 
   @@unique([companyId, name])
 }
@@ -65,9 +66,11 @@ model Item {
   barcode         String
   price           Float
   cost            Float     @default(0)
-  quantity        Int       @default(0)
-  reorderLevel    Int       @default(10)
+  quantityOnHand  Int       @default(0)
+  reorderPoint    Int       @default(10)
   isWeightPriced  Boolean   @default(false)
+  imageUrl        String?
+  isActive        Boolean   @default(true)
   returnPeriodDays Int?
   noReturns       Boolean   @default(false)
   companyId       String
@@ -304,4 +307,3 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
-
