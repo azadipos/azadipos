@@ -16,7 +16,7 @@
   "main": "electron/main.js",
   "build": {
     "appId": "com.azadipos.app",
-    "productName": "Azadi POS",
+    "productName": "AzadiPOS",
     "asar": false,
     "directories": {
       "buildResources": "build-resources",
@@ -57,11 +57,11 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "artifactName": "AzadiPOS-Installer.${ext}"
+      "artifactName": "Azadi POS Setup.${ext}"
     },
     "publish": null,
     "portable": {
-      "artifactName": "AzadiPOS-Portable.${ext}"
+      "artifactName": "AzadiPOS.${ext}"
     }
   },
   "prisma": {

@@ -21,7 +21,7 @@
   },
   "build": {
     "appId": "com.azadipos.serversetup",
-    "productName": "AzadiPOS-ServerSetup",
+    "productName": "Azadi POS Server",
     "publish": null,
     "win": {
       "target": [
@@ -38,10 +38,10 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "artifactName": "AzadiPOS-ServerSetup-Installer.${ext}"
+      "artifactName": "Azadi POS Server Setup.${ext}"
     },
     "portable": {
-      "artifactName": "AzadiPOS-ServerSetup-Portable.${ext}"
+      "artifactName": "Azadi POS Server.${ext}"
     },
     "extraResources": [
       {

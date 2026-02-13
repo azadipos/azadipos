@@ -19,10 +19,19 @@ function getConfigPath() {
   return path.join(app.getPath('userData'), 'azadipos-config.json');
 }
 
-// Log function
+// Log file path
+function getLogPath() {
+  return path.join(app.getPath('userData'), 'azadipos.log');
+}
+
+// Log function - writes to both console and file
 function log(message) {
   const timestamp = new Date().toISOString();
-  console.log(`[${timestamp}] ${message}`);
+  const logLine = `[${timestamp}] ${message}\n`;
+  console.log(logLine.trim());
+  try {
+    fs.appendFileSync(getLogPath(), logLine);
+  } catch (e) {}
 }
 
 // Load saved configuration
@@ -51,6 +60,18 @@ function saveConfig(config) {
   }
 }
 
+// Clear saved configuration
+function clearConfig() {
+  try {
+    const configPath = getConfigPath();
+    if (fs.existsSync(configPath)) {
+      fs.unlinkSync(configPath);
+    }
+  } catch (error) {
+    log(`Error clearing config: ${error.message}`);
+  }
+}
+
 // Get the standalone directory path
 function getStandalonePath() {
   if (isDev) {
@@ -72,7 +93,7 @@ function checkServer(url) {
 }
 
 // Wait for server with timeout
-async function waitForServer(url, timeoutMs = 60000) {
+async function waitForServer(url, timeoutMs = 90000) {
   const startTime = Date.now();
   log(`Waiting for server at ${url}...`);
   
@@ -91,13 +112,16 @@ async function waitForServer(url, timeoutMs = 60000) {
 
 // Test database connection
 async function testDatabaseConnection(connectionString) {
-  const client = new Client({ connectionString, connectionTimeoutMillis: 5000 });
+  log(`Testing database connection...`);
+  const client = new Client({ connectionString, connectionTimeoutMillis: 10000 });
   try {
     await client.connect();
     await client.query('SELECT 1');
     await client.end();
+    log('Database connection successful');
     return { success: true };
   } catch (error) {
+    log(`Database connection failed: ${error.message}`);
     return { success: false, error: error.message };
   }
 }
@@ -112,12 +136,12 @@ function startServer(databaseUrl) {
   
   if (!fs.existsSync(standalonePath)) {
     log(`ERROR: Standalone directory not found: ${standalonePath}`);
-    return null;
+    return { process: null, error: `Standalone directory not found: ${standalonePath}` };
   }
   
   if (!fs.existsSync(serverJs)) {
     log(`ERROR: server.js not found at: ${serverJs}`);
-    return null;
+    return { process: null, error: `server.js not found` };
   }
   
   log('Starting Next.js server...');
@@ -132,38 +156,57 @@ function startServer(databaseUrl) {
     NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET || 'azadipos-desktop-secret-key-change-in-production',
   };
   
-  const proc = spawn('node', [serverJs], {
-    cwd: standalonePath,
-    env,
-    stdio: ['pipe', 'pipe', 'pipe'],
-  });
-  
-  proc.stdout.on('data', (data) => log(`[Server] ${data.toString().trim()}`));
-  proc.stderr.on('data', (data) => log(`[Server Error] ${data.toString().trim()}`));
-  proc.on('error', (error) => log(`[Server Process Error] ${error.message}`));
-  proc.on('close', (code) => {
-    log(`Server process exited with code ${code}`);
-    serverProcess = null;
-    serverStarted = false;
-  });
-  
-  return proc;
+  try {
+    const proc = spawn('node', [serverJs], {
+      cwd: standalonePath,
+      env,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    
+    proc.stdout.on('data', (data) => log(`[Server] ${data.toString().trim()}`));
+    proc.stderr.on('data', (data) => log(`[Server Error] ${data.toString().trim()}`));
+    proc.on('error', (error) => log(`[Server Process Error] ${error.message}`));
+    proc.on('close', (code) => {
+      log(`Server process exited with code ${code}`);
+      serverProcess = null;
+      serverStarted = false;
+    });
+    
+    return { process: proc, error: null };
+  } catch (error) {
+    log(`Failed to spawn server: ${error.message}`);
+    return { process: null, error: error.message };
+  }
+}
+
+// Show error dialog
+function showError(title, message) {
+  dialog.showErrorBox(title, message);
 }
 
 // Create configuration window
 function createConfigWindow() {
   mainWindow = new BrowserWindow({
-    width: 600,
-    height: 500,
+    width: 650,
+    height: 600,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
     },
     autoHideMenuBar: true,
     title: 'AzadiPOS - Configuration',
+    resizable: true,
   });
   
   mainWindow.loadFile(path.join(__dirname, 'config.html'));
+  
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+    // If server isn't running and window closes, quit the app
+    if (!serverStarted) {
+      app.quit();
+    }
+  });
 }
 
 // Create main application window
@@ -203,67 +246,114 @@ ipcMain.handle('load-config', async () => {
   return loadConfig();
 });
 
+ipcMain.handle('clear-config', async () => {
+  clearConfig();
+  currentConfig = null;
+  return { success: true };
+});
+
 ipcMain.handle('start-app', async () => {
+  log('start-app IPC called');
+  
   if (!currentConfig || !currentConfig.databaseUrl) {
-    return { success: false, error: 'No configuration' };
+    log('No configuration found');
+    return { success: false, error: 'No configuration found. Please configure database settings.' };
   }
   
-  // Close config window
+  // Test database connection first
+  log('Testing database connection before starting...');
+  const dbTest = await testDatabaseConnection(currentConfig.databaseUrl);
+  if (!dbTest.success) {
+    log(`Database test failed: ${dbTest.error}`);
+    return { success: false, error: `Database connection failed: ${dbTest.error}` };
+  }
+  
+  // Start the server (don't close config window yet!)
+  log('Starting server...');
+  const serverResult = startServer(currentConfig.databaseUrl);
+  
+  if (!serverResult.process) {
+    log(`Server failed to start: ${serverResult.error}`);
+    return { success: false, error: `Failed to start server: ${serverResult.error}` };
+  }
+  
+  serverProcess = serverResult.process;
+  
+  // Wait for server to be ready
+  log('Waiting for server to be ready...');
+  const serverReady = await waitForServer('http://127.0.0.1:3000');
+  
+  if (!serverReady) {
+    log('Server failed to become ready');
+    if (serverProcess) {
+      serverProcess.kill();
+      serverProcess = null;
+    }
+    return { success: false, error: 'Server failed to start within 90 seconds. Check your database connection and try again.' };
+  }
+  
+  log('Server is ready, opening main window');
+  serverStarted = true;
+  
+  // NOW close the config window and open main window
   if (mainWindow) {
     mainWindow.close();
   }
   
-  // Start server and main window
-  serverProcess = startServer(currentConfig.databaseUrl);
-  if (!serverProcess) {
-    return { success: false, error: 'Failed to start server' };
-  }
-  
-  const serverReady = await waitForServer('http://127.0.0.1:3000');
-  if (!serverReady) {
-    return { success: false, error: 'Server failed to start' };
-  }
-  
-  serverStarted = true;
   createMainWindow();
   return { success: true };
 });
 
 // App lifecycle
 app.whenReady().then(async () => {
-  log('App starting...');
+  log('=== AzadiPOS Starting ===');
+  log(`App path: ${app.getAppPath()}`);
+  log(`User data path: ${app.getPath('userData')}`);
+  log(`Is packaged: ${app.isPackaged}`);
   
   // Check for existing config
   currentConfig = loadConfig();
   
   if (currentConfig && currentConfig.databaseUrl) {
+    log('Found saved configuration, testing connection...');
+    
     // Test saved connection
-    log('Testing saved database connection...');
     const result = await testDatabaseConnection(currentConfig.databaseUrl);
     
     if (result.success) {
-      log('Database connection successful, starting server...');
-      serverProcess = startServer(currentConfig.databaseUrl);
+      log('Saved connection works, starting server...');
+      const serverResult = startServer(currentConfig.databaseUrl);
       
-      if (serverProcess) {
+      if (serverResult.process) {
+        serverProcess = serverResult.process;
+        
         const serverReady = await waitForServer('http://127.0.0.1:3000');
         if (serverReady) {
           serverStarted = true;
           createMainWindow();
           return;
+        } else {
+          log('Server failed to start, showing config window');
+          if (serverProcess) {
+            serverProcess.kill();
+            serverProcess = null;
+          }
         }
       }
+    } else {
+      log(`Saved connection failed: ${result.error}`);
     }
-    
-    log('Saved config failed, showing configuration window...');
   }
   
   // Show configuration window
+  log('Showing configuration window');
   createConfigWindow();
 });
 
 app.on('window-all-closed', () => {
+  log('All windows closed');
   if (serverProcess) {
+    log('Killing server process');
     serverProcess.kill();
   }
   if (process.platform !== 'darwin') {
@@ -272,6 +362,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  log('App quitting');
   if (serverProcess) {
     serverProcess.kill();
   }

@@ -18,11 +18,11 @@
     }
     .container {
       width: 100%;
-      max-width: 500px;
+      max-width: 520px;
     }
     .logo {
       text-align: center;
-      margin-bottom: 30px;
+      margin-bottom: 24px;
     }
     .logo h1 {
       font-size: 2rem;
@@ -36,7 +36,7 @@
       background: rgba(255,255,255,0.05);
       border: 1px solid rgba(255,255,255,0.1);
       border-radius: 16px;
-      padding: 32px;
+      padding: 28px;
     }
     .mode-selector {
       display: grid;
@@ -75,19 +75,24 @@
       margin-top: 4px;
     }
     .form-group {
-      margin-bottom: 20px;
+      margin-bottom: 16px;
+    }
+    .form-row {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 12px;
     }
     label {
       display: block;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
       color: #94a3b8;
-      font-size: 0.9rem;
+      font-size: 0.85rem;
     }
     input, textarea {
       width: 100%;
-      padding: 14px;
+      padding: 12px;
       border: 1px solid rgba(255,255,255,0.2);
-      border-radius: 10px;
+      border-radius: 8px;
       background: rgba(0,0,0,0.3);
       color: #fff;
       font-size: 1rem;
@@ -104,7 +109,7 @@
     }
     .btn {
       width: 100%;
-      padding: 16px;
+      padding: 14px;
       border: none;
       border-radius: 10px;
       font-size: 1rem;
@@ -129,10 +134,18 @@
       background: rgba(255,255,255,0.1);
       color: #fff;
     }
+    .btn-danger {
+      background: rgba(239, 68, 68, 0.2);
+      color: #ef4444;
+      border: 1px solid #ef4444;
+    }
+    .btn-danger:hover {
+      background: rgba(239, 68, 68, 0.3);
+    }
     .status {
       padding: 12px;
       border-radius: 8px;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
       font-size: 0.9rem;
     }
     .status.success {
@@ -150,28 +163,77 @@
       border: 1px solid #3b82f6;
       color: #93c5fd;
     }
+    .status.warning {
+      background: rgba(251, 191, 36, 0.2);
+      border: 1px solid #fbbf24;
+      color: #fbbf24;
+    }
     .loading {
       display: inline-block;
-      width: 16px;
-      height: 16px;
+      width: 18px;
+      height: 18px;
       border: 2px solid rgba(255,255,255,0.3);
       border-top-color: #4ade80;
       border-radius: 50%;
       animation: spin 1s linear infinite;
       margin-right: 8px;
+      vertical-align: middle;
     }
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
     .hidden { display: none; }
     .help-text {
-      font-size: 0.8rem;
+      font-size: 0.75rem;
       color: #64748b;
       margin-top: 6px;
+    }
+    .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(26, 26, 46, 0.95);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .loading-overlay .spinner {
+      width: 50px;
+      height: 50px;
+      border: 4px solid rgba(255,255,255,0.2);
+      border-top-color: #4ade80;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 20px;
+    }
+    .loading-overlay p {
+      color: #94a3b8;
+      font-size: 1.1rem;
+    }
+    .reset-link {
+      display: block;
+      text-align: center;
+      margin-top: 16px;
+      color: #64748b;
+      font-size: 0.85rem;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+    .reset-link:hover {
+      color: #94a3b8;
     }
   </style>
 </head>
 <body>
+  <div id="loadingOverlay" class="loading-overlay hidden">
+    <div class="spinner"></div>
+    <p id="loadingText">Connecting to database...</p>
+  </div>
+
   <div class="container">
     <div class="logo">
       <h1>💻 AzadiPOS</h1>
@@ -179,13 +241,13 @@
     </div>
     
     <div class="card">
-      <h2 style="margin-bottom: 20px; color: #fff;">Database Configuration</h2>
+      <h2 style="margin-bottom: 16px; color: #fff; font-size: 1.1rem;">Database Configuration</h2>
       
       <div class="mode-selector">
         <button class="mode-btn active" id="modeServer" onclick="setMode('server')">
           <div class="icon">🖥️</div>
           <div class="label">This is the Server</div>
-          <div class="desc">Run database here</div>
+          <div class="desc">Database runs here</div>
         </button>
         <button class="mode-btn" id="modeTerminal" onclick="setMode('terminal')">
           <div class="icon">📱</div>
@@ -195,21 +257,25 @@
       </div>
       
       <div id="serverConfig">
-        <div class="form-group">
-          <label>PostgreSQL Host</label>
-          <input type="text" id="host" value="localhost" placeholder="localhost">
+        <div class="form-row">
+          <div class="form-group">
+            <label>PostgreSQL Host</label>
+            <input type="text" id="host" value="localhost" placeholder="localhost">
+          </div>
+          <div class="form-group">
+            <label>Port</label>
+            <input type="text" id="port" value="5432" placeholder="5432">
+          </div>
         </div>
-        <div class="form-group">
-          <label>Port</label>
-          <input type="text" id="port" value="5432" placeholder="5432">
-        </div>
-        <div class="form-group">
-          <label>Username</label>
-          <input type="text" id="username" value="postgres" placeholder="postgres">
-        </div>
-        <div class="form-group">
-          <label>Password</label>
-          <input type="password" id="password" placeholder="Your PostgreSQL password">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Username</label>
+            <input type="text" id="username" value="postgres" placeholder="postgres">
+          </div>
+          <div class="form-group">
+            <label>Password</label>
+            <input type="password" id="password" placeholder="Password">
+          </div>
         </div>
         <div class="form-group">
           <label>Database Name</label>
@@ -218,8 +284,8 @@
       </div>
       
       <div id="terminalConfig" class="hidden">
-        <div class="status info">
-          Enter the connection string from the Server Setup tool or from your server administrator.
+        <div class="status info" style="margin-bottom: 16px;">
+          Enter the connection string from your server administrator or the Server Setup tool.
         </div>
         <div class="form-group">
           <label>Connection String</label>
@@ -232,6 +298,8 @@
       
       <button class="btn btn-secondary" id="testBtn" onclick="testConnection()">Test Connection</button>
       <button class="btn btn-primary" id="startBtn" onclick="saveAndStart()" disabled>Connect & Start</button>
+      
+      <div class="reset-link" onclick="resetConfig()">Reset saved configuration</div>
     </div>
   </div>
 
@@ -240,6 +308,16 @@
     
     let mode = 'server';
     let connectionValid = false;
+    let isStarting = false;
+    
+    function showLoading(text) {
+      document.getElementById('loadingText').textContent = text;
+      document.getElementById('loadingOverlay').classList.remove('hidden');
+    }
+    
+    function hideLoading() {
+      document.getElementById('loadingOverlay').classList.add('hidden');
+    }
     
     function setMode(newMode) {
       mode = newMode;
@@ -256,11 +334,11 @@
       if (mode === 'terminal') {
         return document.getElementById('connectionString').value.trim();
       }
-      const host = document.getElementById('host').value;
-      const port = document.getElementById('port').value;
-      const username = document.getElementById('username').value;
+      const host = document.getElementById('host').value.trim();
+      const port = document.getElementById('port').value.trim();
+      const username = document.getElementById('username').value.trim();
       const password = document.getElementById('password').value;
-      const dbName = document.getElementById('dbName').value;
+      const dbName = document.getElementById('dbName').value.trim();
       return `postgresql://${username}:${encodeURIComponent(password)}@${host}:${port}/${dbName}`;
     }
     
@@ -268,10 +346,15 @@
       const btn = document.getElementById('testBtn');
       const status = document.getElementById('statusDiv');
       
+      const connStr = getConnectionString();
+      if (!connStr || connStr === 'postgresql://:@:/') {
+        status.innerHTML = '<div class="status error">Please fill in all connection fields</div>';
+        return;
+      }
+      
       btn.innerHTML = '<span class="loading"></span>Testing...';
       btn.disabled = true;
       
-      const connStr = getConnectionString();
       const result = await ipcRenderer.invoke('test-connection', connStr);
       
       if (result.success) {
@@ -289,24 +372,47 @@
     }
     
     async function saveAndStart() {
-      const btn = document.getElementById('startBtn');
-      const status = document.getElementById('statusDiv');
+      if (isStarting) return;
+      isStarting = true;
       
-      btn.innerHTML = '<span class="loading"></span>Starting...';
-      btn.disabled = true;
+      const status = document.getElementById('statusDiv');
+      const connStr = getConnectionString();
+      
+      if (!connStr) {
+        status.innerHTML = '<div class="status error">Please configure connection settings</div>';
+        isStarting = false;
+        return;
+      }
+      
+      showLoading('Connecting to database...');
       
       const config = {
         mode,
-        databaseUrl: getConnectionString(),
+        databaseUrl: connStr,
       };
       
+      // Save config first
       await ipcRenderer.invoke('save-config', config);
+      
+      showLoading('Starting server...');
+      
+      // Try to start the app
       const result = await ipcRenderer.invoke('start-app');
       
       if (!result.success) {
+        hideLoading();
         status.innerHTML = `<div class="status error">✗ Failed to start: ${result.error}</div>`;
-        btn.innerHTML = 'Connect & Start';
-        btn.disabled = false;
+        isStarting = false;
+      }
+      // If successful, the window will be replaced by the main app window
+    }
+    
+    async function resetConfig() {
+      if (confirm('Reset saved configuration? You will need to re-enter your database settings.')) {
+        await ipcRenderer.invoke('clear-config');
+        document.getElementById('statusDiv').innerHTML = '<div class="status info">Configuration cleared</div>';
+        connectionValid = false;
+        document.getElementById('startBtn').disabled = true;
       }
     }
     
@@ -326,7 +432,9 @@
             document.getElementById('username').value = url.username;
             document.getElementById('password').value = decodeURIComponent(url.password);
             document.getElementById('dbName').value = url.pathname.slice(1);
-          } catch (e) {}
+          } catch (e) {
+            console.log('Could not parse saved URL');
+          }
         }
       }
     }
