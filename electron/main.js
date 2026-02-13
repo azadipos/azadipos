@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, dialog, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 const http = require('http');
@@ -10,6 +10,7 @@ Menu.setApplicationMenu(null);
 
 const isDev = !app.isPackaged;
 let mainWindow = null;
+let splashWindow = null;
 let serverProcess = null;
 let serverStarted = false;
 let currentConfig = null;
@@ -110,10 +111,10 @@ async function waitForServer(url, timeoutMs = 90000) {
   return false;
 }
 
-// Test database connection
-async function testDatabaseConnection(connectionString) {
+// Test database connection with shorter timeout for UI responsiveness
+async function testDatabaseConnection(connectionString, timeoutMs = 8000) {
   log(`Testing database connection...`);
-  const client = new Client({ connectionString, connectionTimeoutMillis: 10000 });
+  const client = new Client({ connectionString, connectionTimeoutMillis: timeoutMs });
   try {
     await client.connect();
     await client.query('SELECT 1');
@@ -179,13 +180,50 @@ function startServer(databaseUrl) {
   }
 }
 
-// Show error dialog
-function showError(title, message) {
-  dialog.showErrorBox(title, message);
+// Send status update to splash window
+function updateSplashStatus(status, isError = false) {
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.webContents.send('status-update', { status, isError });
+  }
+}
+
+// Create splash window that shows immediately
+function createSplashWindow() {
+  splashWindow = new BrowserWindow({
+    width: 450,
+    height: 350,
+    frame: false,
+    transparent: false,
+    resizable: false,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false,
+    },
+    backgroundColor: '#1a1a2e',
+    show: false,
+  });
+  
+  splashWindow.loadFile(path.join(__dirname, 'splash.html'));
+  
+  splashWindow.once('ready-to-show', () => {
+    splashWindow.show();
+  });
+  
+  splashWindow.on('closed', () => {
+    splashWindow = null;
+  });
+  
+  return splashWindow;
 }
 
 // Create configuration window
-function createConfigWindow() {
+function createConfigWindow(errorMessage = null) {
+  // Close splash if open
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.close();
+    splashWindow = null;
+  }
+  
   mainWindow = new BrowserWindow({
     width: 650,
     height: 600,
@@ -196,9 +234,20 @@ function createConfigWindow() {
     autoHideMenuBar: true,
     title: 'AzadiPOS - Configuration',
     resizable: true,
+    show: false,
   });
   
   mainWindow.loadFile(path.join(__dirname, 'config.html'));
+  
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+    // Send error message if there was one
+    if (errorMessage) {
+      setTimeout(() => {
+        mainWindow.webContents.send('startup-error', errorMessage);
+      }, 100);
+    }
+  });
   
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -211,6 +260,12 @@ function createConfigWindow() {
 
 // Create main application window
 function createMainWindow() {
+  // Close splash if open
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.close();
+    splashWindow = null;
+  }
+  
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -220,9 +275,14 @@ function createMainWindow() {
     },
     autoHideMenuBar: true,
     title: 'AzadiPOS',
+    show: false,
   });
   
   mainWindow.loadURL('http://127.0.0.1:3000');
+  
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+  });
   
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -250,6 +310,15 @@ ipcMain.handle('clear-config', async () => {
   clearConfig();
   currentConfig = null;
   return { success: true };
+});
+
+ipcMain.handle('open-log-file', async () => {
+  const logPath = getLogPath();
+  if (fs.existsSync(logPath)) {
+    shell.openPath(logPath);
+    return { success: true };
+  }
+  return { success: false, error: 'Log file not found' };
 });
 
 ipcMain.handle('start-app', async () => {
@@ -304,6 +373,69 @@ ipcMain.handle('start-app', async () => {
   return { success: true };
 });
 
+// Auto-start attempt with splash screen
+async function attemptAutoStart() {
+  log('Attempting auto-start with saved configuration...');
+  
+  updateSplashStatus('Checking saved configuration...');
+  await new Promise(r => setTimeout(r, 500));
+  
+  currentConfig = loadConfig();
+  
+  if (!currentConfig || !currentConfig.databaseUrl) {
+    log('No saved configuration found');
+    createConfigWindow();
+    return;
+  }
+  
+  updateSplashStatus('Testing database connection...');
+  
+  // Test saved connection
+  const result = await testDatabaseConnection(currentConfig.databaseUrl);
+  
+  if (!result.success) {
+    log(`Saved connection failed: ${result.error}`);
+    updateSplashStatus('Connection failed, opening settings...', true);
+    await new Promise(r => setTimeout(r, 1000));
+    createConfigWindow(`Previous connection failed: ${result.error}`);
+    return;
+  }
+  
+  updateSplashStatus('Starting POS server...');
+  log('Saved connection works, starting server...');
+  
+  const serverResult = startServer(currentConfig.databaseUrl);
+  
+  if (!serverResult.process) {
+    log(`Server failed to start: ${serverResult.error}`);
+    updateSplashStatus('Server failed to start...', true);
+    await new Promise(r => setTimeout(r, 1000));
+    createConfigWindow(`Failed to start server: ${serverResult.error}`);
+    return;
+  }
+  
+  serverProcess = serverResult.process;
+  
+  updateSplashStatus('Waiting for server to be ready...');
+  const serverReady = await waitForServer('http://127.0.0.1:3000');
+  
+  if (!serverReady) {
+    log('Server failed to start, showing config window');
+    if (serverProcess) {
+      serverProcess.kill();
+      serverProcess = null;
+    }
+    updateSplashStatus('Server timeout, opening settings...', true);
+    await new Promise(r => setTimeout(r, 1000));
+    createConfigWindow('Server failed to start within 90 seconds. Please check your database connection.');
+    return;
+  }
+  
+  updateSplashStatus('Loading AzadiPOS...');
+  serverStarted = true;
+  createMainWindow();
+}
+
 // App lifecycle
 app.whenReady().then(async () => {
   log('=== AzadiPOS Starting ===');
@@ -311,43 +443,14 @@ app.whenReady().then(async () => {
   log(`User data path: ${app.getPath('userData')}`);
   log(`Is packaged: ${app.isPackaged}`);
   
-  // Check for existing config
-  currentConfig = loadConfig();
+  // Always show splash immediately
+  createSplashWindow();
   
-  if (currentConfig && currentConfig.databaseUrl) {
-    log('Found saved configuration, testing connection...');
-    
-    // Test saved connection
-    const result = await testDatabaseConnection(currentConfig.databaseUrl);
-    
-    if (result.success) {
-      log('Saved connection works, starting server...');
-      const serverResult = startServer(currentConfig.databaseUrl);
-      
-      if (serverResult.process) {
-        serverProcess = serverResult.process;
-        
-        const serverReady = await waitForServer('http://127.0.0.1:3000');
-        if (serverReady) {
-          serverStarted = true;
-          createMainWindow();
-          return;
-        } else {
-          log('Server failed to start, showing config window');
-          if (serverProcess) {
-            serverProcess.kill();
-            serverProcess = null;
-          }
-        }
-      }
-    } else {
-      log(`Saved connection failed: ${result.error}`);
-    }
-  }
+  // Small delay to ensure splash is visible
+  await new Promise(r => setTimeout(r, 300));
   
-  // Show configuration window
-  log('Showing configuration window');
-  createConfigWindow();
+  // Attempt auto-start
+  await attemptAutoStart();
 });
 
 app.on('window-all-closed', () => {

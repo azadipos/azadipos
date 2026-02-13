@@ -214,16 +214,19 @@
       color: #94a3b8;
       font-size: 1.1rem;
     }
-    .reset-link {
-      display: block;
-      text-align: center;
+    .footer-links {
+      display: flex;
+      justify-content: center;
+      gap: 20px;
       margin-top: 16px;
+    }
+    .footer-link {
       color: #64748b;
       font-size: 0.85rem;
       cursor: pointer;
       text-decoration: underline;
     }
-    .reset-link:hover {
+    .footer-link:hover {
       color: #94a3b8;
     }
   </style>
@@ -242,6 +245,8 @@
     
     <div class="card">
       <h2 style="margin-bottom: 16px; color: #fff; font-size: 1.1rem;">Database Configuration</h2>
+      
+      <div id="startupError"></div>
       
       <div class="mode-selector">
         <button class="mode-btn active" id="modeServer" onclick="setMode('server')">
@@ -299,7 +304,10 @@
       <button class="btn btn-secondary" id="testBtn" onclick="testConnection()">Test Connection</button>
       <button class="btn btn-primary" id="startBtn" onclick="saveAndStart()" disabled>Connect & Start</button>
       
-      <div class="reset-link" onclick="resetConfig()">Reset saved configuration</div>
+      <div class="footer-links">
+        <span class="footer-link" onclick="resetConfig()">Reset configuration</span>
+        <span class="footer-link" onclick="openLogFile()">View logs</span>
+      </div>
     </div>
   </div>
 
@@ -309,6 +317,12 @@
     let mode = 'server';
     let connectionValid = false;
     let isStarting = false;
+    
+    // Listen for startup error from main process
+    ipcRenderer.on('startup-error', (event, message) => {
+      const errorDiv = document.getElementById('startupError');
+      errorDiv.innerHTML = `<div class="status warning" style="margin-bottom: 16px;">⚠️ ${message}</div>`;
+    });
     
     function showLoading(text) {
       document.getElementById('loadingText').textContent = text;
@@ -361,6 +375,8 @@
         status.innerHTML = '<div class="status success">✓ Connected successfully!</div>';
         connectionValid = true;
         document.getElementById('startBtn').disabled = false;
+        // Clear any startup error
+        document.getElementById('startupError').innerHTML = '';
       } else {
         status.innerHTML = `<div class="status error">✗ Connection failed: ${result.error}</div>`;
         connectionValid = false;
@@ -411,9 +427,14 @@
       if (confirm('Reset saved configuration? You will need to re-enter your database settings.')) {
         await ipcRenderer.invoke('clear-config');
         document.getElementById('statusDiv').innerHTML = '<div class="status info">Configuration cleared</div>';
+        document.getElementById('startupError').innerHTML = '';
         connectionValid = false;
         document.getElementById('startBtn').disabled = true;
       }
+    }
+    
+    async function openLogFile() {
+      await ipcRenderer.invoke('open-log-file');
     }
     
     // Load saved config on startup

@@ -1,10 +1,21 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { Client } = require('pg');
 const os = require('os');
+const https = require('https');
+const { spawn, exec } = require('child_process');
 
 let mainWindow;
+
+// PostgreSQL installer URL (latest stable version for Windows x64)
+const POSTGRES_DOWNLOAD_URL = 'https://get.enterprisedb.com/postgresql/postgresql-16.4-1-windows-x64.exe';
+const POSTGRES_INSTALLER_NAME = 'postgresql-installer.exe';
+
+// Get downloads folder
+function getDownloadPath() {
+  return path.join(app.getPath('downloads'), POSTGRES_INSTALLER_NAME);
+}
 
 // Read SQL schema file
 function getSchemaSQL() {
@@ -17,10 +28,129 @@ function getSchemaSQL() {
   return fs.readFileSync(schemaPath, 'utf8');
 }
 
+// Check if PostgreSQL is installed
+function checkPostgresInstalled() {
+  return new Promise((resolve) => {
+    // Check common installation paths
+    const commonPaths = [
+      'C:\\Program Files\\PostgreSQL',
+      'C:\\Program Files (x86)\\PostgreSQL',
+    ];
+    
+    for (const basePath of commonPaths) {
+      if (fs.existsSync(basePath)) {
+        const versions = fs.readdirSync(basePath).filter(f => /^\d+$/.test(f));
+        if (versions.length > 0) {
+          const latestVersion = versions.sort((a, b) => parseInt(b) - parseInt(a))[0];
+          const binPath = path.join(basePath, latestVersion, 'bin');
+          if (fs.existsSync(path.join(binPath, 'psql.exe'))) {
+            resolve({ installed: true, path: binPath, version: latestVersion });
+            return;
+          }
+        }
+      }
+    }
+    
+    // Try to run psql command
+    exec('where psql', (error, stdout) => {
+      if (!error && stdout.trim()) {
+        resolve({ installed: true, path: path.dirname(stdout.trim().split('\n')[0]), version: 'unknown' });
+      } else {
+        resolve({ installed: false });
+      }
+    });
+  });
+}
+
+// Download file with progress
+function downloadFile(url, dest, onProgress) {
+  return new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(dest);
+    
+    const request = https.get(url, (response) => {
+      // Handle redirects
+      if (response.statusCode === 301 || response.statusCode === 302) {
+        file.close();
+        fs.unlinkSync(dest);
+        downloadFile(response.headers.location, dest, onProgress)
+          .then(resolve)
+          .catch(reject);
+        return;
+      }
+      
+      if (response.statusCode !== 200) {
+        reject(new Error(`Download failed with status ${response.statusCode}`));
+        return;
+      }
+      
+      const totalSize = parseInt(response.headers['content-length'], 10);
+      let downloadedSize = 0;
+      
+      response.on('data', (chunk) => {
+        downloadedSize += chunk.length;
+        if (onProgress && totalSize) {
+          onProgress(downloadedSize, totalSize);
+        }
+      });
+      
+      response.pipe(file);
+      
+      file.on('finish', () => {
+        file.close();
+        resolve(dest);
+      });
+    });
+    
+    request.on('error', (err) => {
+      fs.unlink(dest, () => {});
+      reject(err);
+    });
+    
+    file.on('error', (err) => {
+      fs.unlink(dest, () => {});
+      reject(err);
+    });
+  });
+}
+
+// Run PostgreSQL installer silently
+function runInstaller(installerPath, password) {
+  return new Promise((resolve, reject) => {
+    // PostgreSQL silent install arguments
+    const args = [
+      '--mode', 'unattended',
+      '--unattendedmodeui', 'minimal',
+      '--superpassword', password,
+      '--servicename', 'postgresql',
+      '--servicepassword', password,
+      '--serverport', '5432',
+      '--enable-components', 'server,commandlinetools',
+      '--disable-components', 'pgAdmin,stackbuilder',
+    ];
+    
+    const installer = spawn(installerPath, args, {
+      stdio: 'ignore',
+      detached: false,
+    });
+    
+    installer.on('error', (error) => {
+      reject(new Error(`Failed to run installer: ${error.message}`));
+    });
+    
+    installer.on('close', (code) => {
+      if (code === 0) {
+        resolve({ success: true });
+      } else {
+        reject(new Error(`Installer exited with code ${code}`));
+      }
+    });
+  });
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 900,
-    height: 700,
+    width: 950,
+    height: 800,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
@@ -36,6 +166,53 @@ app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
+});
+
+// Check if PostgreSQL is installed
+ipcMain.handle('check-postgres', async () => {
+  return await checkPostgresInstalled();
+});
+
+// Download PostgreSQL installer
+ipcMain.handle('download-postgres', async (event) => {
+  const dest = getDownloadPath();
+  
+  try {
+    await downloadFile(POSTGRES_DOWNLOAD_URL, dest, (downloaded, total) => {
+      const percent = Math.round((downloaded / total) * 100);
+      mainWindow.webContents.send('download-progress', { downloaded, total, percent });
+    });
+    return { success: true, path: dest };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Install PostgreSQL
+ipcMain.handle('install-postgres', async (event, password) => {
+  const installerPath = getDownloadPath();
+  
+  if (!fs.existsSync(installerPath)) {
+    return { success: false, error: 'Installer not found. Please download first.' };
+  }
+  
+  try {
+    await runInstaller(installerPath, password);
+    
+    // Clean up installer
+    try {
+      fs.unlinkSync(installerPath);
+    } catch (e) {}
+    
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Open download folder
+ipcMain.handle('open-downloads-folder', async () => {
+  shell.openPath(app.getPath('downloads'));
 });
 
 // Get local IP addresses

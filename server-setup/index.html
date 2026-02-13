@@ -18,7 +18,7 @@
       padding: 20px;
     }
     .container {
-      max-width: 800px;
+      max-width: 850px;
       margin: 0 auto;
     }
     h1 {
@@ -57,6 +57,10 @@
       justify-content: center;
       font-weight: bold;
       font-size: 0.9rem;
+      flex-shrink: 0;
+    }
+    .step-number.done {
+      background: #22c55e;
     }
     .form-group {
       margin-bottom: 16px;
@@ -113,6 +117,14 @@
     .btn-secondary:hover {
       background: rgba(255,255,255,0.2);
     }
+    .btn-danger {
+      background: rgba(239, 68, 68, 0.2);
+      color: #ef4444;
+      border: 1px solid rgba(239, 68, 68, 0.5);
+    }
+    .btn-danger:hover {
+      background: rgba(239, 68, 68, 0.3);
+    }
     .status {
       padding: 12px;
       border-radius: 8px;
@@ -133,6 +145,11 @@
       background: rgba(59, 130, 246, 0.2);
       border: 1px solid #3b82f6;
       color: #93c5fd;
+    }
+    .status.warning {
+      background: rgba(251, 191, 36, 0.2);
+      border: 1px solid #fbbf24;
+      color: #fbbf24;
     }
     .connection-string {
       background: rgba(0,0,0,0.5);
@@ -196,6 +213,67 @@
       to { transform: rotate(360deg); }
     }
     .hidden { display: none; }
+    .progress-bar {
+      width: 100%;
+      height: 8px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 12px;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: #4ade80;
+      transition: width 0.3s ease;
+    }
+    .progress-text {
+      text-align: center;
+      margin-top: 8px;
+      color: #94a3b8;
+      font-size: 0.85rem;
+    }
+    .postgres-status {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+    }
+    .postgres-status.installed {
+      background: rgba(74, 222, 128, 0.1);
+      border: 1px solid rgba(74, 222, 128, 0.3);
+    }
+    .postgres-status.not-installed {
+      background: rgba(251, 191, 36, 0.1);
+      border: 1px solid rgba(251, 191, 36, 0.3);
+    }
+    .postgres-status .icon {
+      font-size: 2rem;
+    }
+    .postgres-status .text h3 {
+      color: #fff;
+      margin-bottom: 4px;
+    }
+    .postgres-status .text p {
+      color: #94a3b8;
+      font-size: 0.85rem;
+    }
+    .install-section {
+      background: rgba(0,0,0,0.2);
+      border-radius: 8px;
+      padding: 16px;
+      margin-top: 16px;
+    }
+    .install-section h4 {
+      color: #fbbf24;
+      margin-bottom: 12px;
+    }
+    .buttons-row {
+      display: flex;
+      gap: 12px;
+      margin-top: 12px;
+    }
   </style>
 </head>
 <body>
@@ -203,16 +281,44 @@
     <h1>🖥️ AzadiPOS Server Setup</h1>
     <p class="subtitle">Configure your PostgreSQL database server for the POS system</p>
 
-    <div class="info-box">
-      <h3>📋 Before You Begin</h3>
-      <p>
-        This tool helps you set up a PostgreSQL database server that your POS terminals will connect to.
-        <br><br>
-        <strong>Need PostgreSQL?</strong> Download it from 
-        <a href="https://www.postgresql.org/download/windows/" target="_blank">postgresql.org</a>
-        <br>
-        During installation, remember the password you set for the "postgres" user.
-      </p>
+    <!-- Step 0: PostgreSQL Check/Install -->
+    <div class="card">
+      <h2><span class="step-number" id="step0Num">0</span> PostgreSQL Installation</h2>
+      
+      <div id="postgresStatus" class="postgres-status">
+        <span class="icon">⏳</span>
+        <div class="text">
+          <h3>Checking...</h3>
+          <p>Looking for PostgreSQL installation</p>
+        </div>
+      </div>
+      
+      <div id="installSection" class="install-section hidden">
+        <h4>📥 Auto-Install PostgreSQL</h4>
+        <p style="color: #94a3b8; margin-bottom: 12px; font-size: 0.9rem;">
+          We can automatically download and install PostgreSQL for you. You'll need to set a password for the database.
+        </p>
+        
+        <div class="form-group">
+          <label>Set PostgreSQL Password</label>
+          <input type="password" id="installPassword" placeholder="Choose a secure password">
+          <p style="color: #64748b; font-size: 0.75rem; margin-top: 4px;">Remember this password - you'll need it to connect!</p>
+        </div>
+        
+        <div id="downloadProgress" class="hidden">
+          <div class="progress-bar">
+            <div class="progress-bar-fill" id="progressFill" style="width: 0%"></div>
+          </div>
+          <p class="progress-text" id="progressText">Downloading...</p>
+        </div>
+        
+        <div id="installStatus"></div>
+        
+        <div class="buttons-row">
+          <button class="btn-primary" id="downloadBtn" onclick="downloadPostgres()">Download PostgreSQL (~300MB)</button>
+          <button class="btn-secondary" onclick="openManualDownload()">Download Manually</button>
+        </div>
+      </div>
     </div>
 
     <!-- Step 1: PostgreSQL Connection -->
@@ -286,6 +392,7 @@
 
     let connectionValid = false;
     let dbCreated = false;
+    let postgresInstalled = false;
 
     // Load saved config on startup
     async function loadSavedConfig() {
@@ -296,6 +403,102 @@
         document.getElementById('username').value = result.config.username || 'postgres';
         document.getElementById('dbName').value = result.config.dbName || 'azadipos';
       }
+    }
+
+    // Check PostgreSQL installation
+    async function checkPostgres() {
+      const statusDiv = document.getElementById('postgresStatus');
+      const installSection = document.getElementById('installSection');
+      const step0Num = document.getElementById('step0Num');
+      
+      const result = await ipcRenderer.invoke('check-postgres');
+      
+      if (result.installed) {
+        postgresInstalled = true;
+        statusDiv.className = 'postgres-status installed';
+        statusDiv.innerHTML = `
+          <span class="icon">✅</span>
+          <div class="text">
+            <h3>PostgreSQL Installed</h3>
+            <p>Version ${result.version} found at ${result.path}</p>
+          </div>
+        `;
+        step0Num.classList.add('done');
+        step0Num.textContent = '✓';
+        installSection.classList.add('hidden');
+      } else {
+        statusDiv.className = 'postgres-status not-installed';
+        statusDiv.innerHTML = `
+          <span class="icon">⚠️</span>
+          <div class="text">
+            <h3>PostgreSQL Not Found</h3>
+            <p>PostgreSQL needs to be installed to run the server</p>
+          </div>
+        `;
+        installSection.classList.remove('hidden');
+      }
+    }
+
+    // Download PostgreSQL
+    async function downloadPostgres() {
+      const btn = document.getElementById('downloadBtn');
+      const progressDiv = document.getElementById('downloadProgress');
+      const statusDiv = document.getElementById('installStatus');
+      const password = document.getElementById('installPassword').value;
+      
+      if (!password || password.length < 4) {
+        statusDiv.innerHTML = '<div class="status error">Please enter a password (at least 4 characters)</div>';
+        return;
+      }
+      
+      btn.disabled = true;
+      btn.innerHTML = '<span class="loading"></span>Downloading...';
+      progressDiv.classList.remove('hidden');
+      statusDiv.innerHTML = '';
+      
+      // Listen for progress updates
+      ipcRenderer.on('download-progress', (event, data) => {
+        document.getElementById('progressFill').style.width = `${data.percent}%`;
+        const mb = (data.downloaded / 1024 / 1024).toFixed(1);
+        const totalMb = (data.total / 1024 / 1024).toFixed(1);
+        document.getElementById('progressText').textContent = `Downloading: ${mb}MB / ${totalMb}MB (${data.percent}%)`;
+      });
+      
+      const downloadResult = await ipcRenderer.invoke('download-postgres');
+      
+      if (!downloadResult.success) {
+        statusDiv.innerHTML = `<div class="status error">Download failed: ${downloadResult.error}</div>`;
+        btn.disabled = false;
+        btn.innerHTML = 'Download PostgreSQL (~300MB)';
+        return;
+      }
+      
+      // Start installation
+      document.getElementById('progressText').textContent = 'Installing PostgreSQL (this may take a few minutes)...';
+      btn.innerHTML = '<span class="loading"></span>Installing...';
+      
+      const installResult = await ipcRenderer.invoke('install-postgres', password);
+      
+      if (installResult.success) {
+        statusDiv.innerHTML = '<div class="status success">✓ PostgreSQL installed successfully!</div>';
+        document.getElementById('password').value = password;
+        
+        // Recheck installation
+        await checkPostgres();
+        
+        statusDiv.innerHTML += '<div class="status info" style="margin-top: 8px;">🎉 PostgreSQL is ready! Your password has been filled in below. Click "Test Connection" to continue.</div>';
+      } else {
+        statusDiv.innerHTML = `<div class="status error">Installation failed: ${installResult.error}</div>`;
+      }
+      
+      btn.disabled = false;
+      btn.innerHTML = 'Download PostgreSQL (~300MB)';
+      progressDiv.classList.add('hidden');
+    }
+
+    // Open manual download page
+    function openManualDownload() {
+      require('electron').shell.openExternal('https://www.postgresql.org/download/windows/');
     }
 
     // Get local IPs
@@ -428,6 +631,7 @@
     });
 
     // Initialize
+    checkPostgres();
     loadSavedConfig();
     loadLocalIPs();
   </script>
