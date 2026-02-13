@@ -1,11 +1,21 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
-const { exec, spawn } = require('child_process');
 const fs = require('fs');
 const { Client } = require('pg');
 const os = require('os');
 
 let mainWindow;
+
+// Read SQL schema file
+function getSchemaSQL() {
+  let schemaPath;
+  if (app.isPackaged) {
+    schemaPath = path.join(process.resourcesPath, 'schema.sql');
+  } else {
+    schemaPath = path.join(__dirname, 'schema.sql');
+  }
+  return fs.readFileSync(schemaPath, 'utf8');
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -42,19 +52,6 @@ ipcMain.handle('get-local-ips', async () => {
   return ips;
 });
 
-// Check if PostgreSQL is installed
-ipcMain.handle('check-postgres', async () => {
-  return new Promise((resolve) => {
-    exec('psql --version', (error, stdout) => {
-      if (error) {
-        resolve({ installed: false, version: null });
-      } else {
-        resolve({ installed: true, version: stdout.trim() });
-      }
-    });
-  });
-});
-
 // Test PostgreSQL connection
 ipcMain.handle('test-connection', async (event, config) => {
   const { host, port, username, password } = config;
@@ -63,7 +60,7 @@ ipcMain.handle('test-connection', async (event, config) => {
     port: parseInt(port),
     user: username,
     password,
-    database: 'postgres', // Connect to default DB first
+    database: 'postgres',
     connectionTimeoutMillis: 5000,
   });
 
@@ -107,34 +104,32 @@ ipcMain.handle('create-database', async (event, config) => {
   }
 });
 
-// Run migrations
-ipcMain.handle('run-migrations', async (event, config) => {
+// Setup tables using raw SQL
+ipcMain.handle('setup-tables', async (event, config) => {
   const { host, port, username, password, dbName } = config;
-  const connectionString = `postgresql://${username}:${encodeURIComponent(password)}@${host}:${port}/${dbName}`;
-  
-  // Find prisma directory
-  let prismaDir;
-  if (app.isPackaged) {
-    prismaDir = path.join(process.resourcesPath, 'prisma');
-  } else {
-    prismaDir = path.join(__dirname, '..', 'prisma');
-  }
-  
-  return new Promise((resolve) => {
-    const env = { ...process.env, DATABASE_URL: connectionString };
-    
-    // First generate Prisma client, then push schema
-    exec(`npx prisma db push --schema="${path.join(prismaDir, 'schema.prisma')}"`, 
-      { env, cwd: __dirname },
-      (error, stdout, stderr) => {
-        if (error) {
-          resolve({ success: false, error: stderr || error.message });
-        } else {
-          resolve({ success: true, output: stdout });
-        }
-      }
-    );
+  const client = new Client({
+    host,
+    port: parseInt(port),
+    user: username,
+    password,
+    database: dbName,
   });
+
+  try {
+    await client.connect();
+    
+    // Get the SQL schema
+    const sql = getSchemaSQL();
+    
+    // Execute the SQL
+    await client.query(sql);
+    
+    await client.end();
+    return { success: true };
+  } catch (error) {
+    await client.end().catch(() => {});
+    return { success: false, error: error.message };
+  }
 });
 
 // Generate connection string

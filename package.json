@@ -29,14 +29,24 @@
       {
         "from": ".next/standalone",
         "to": "standalone",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "win": {
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },
@@ -46,7 +56,12 @@
       "allowElevation": true,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "artifactName": "AzadiPOS-Installer.${ext}"
+    },
+    "publish": null,
+    "portable": {
+      "artifactName": "AzadiPOS-Portable.${ext}"
     }
   },
   "prisma": {

@@ -257,8 +257,8 @@
     <div class="card">
       <h2><span class="step-number">3</span> Setup Database Tables</h2>
       <p style="color: #94a3b8; margin-bottom: 12px;">This will create all the tables needed for the POS system.</p>
-      <button class="btn-primary" id="runMigrations" disabled>Setup Tables</button>
-      <div id="migrationStatus"></div>
+      <button class="btn-primary" id="setupTables" disabled>Setup Tables</button>
+      <div id="tableStatus"></div>
     </div>
 
     <!-- Step 4: Connection Info -->
@@ -367,7 +367,7 @@
           ? '✓ Database created successfully!' 
           : '✓ Database already exists!';
         dbCreated = true;
-        document.getElementById('runMigrations').disabled = false;
+        document.getElementById('setupTables').disabled = false;
         
         // Save config
         await ipcRenderer.invoke('save-config', config);
@@ -380,10 +380,10 @@
       btn.disabled = !connectionValid;
     });
 
-    // Run migrations
-    document.getElementById('runMigrations').addEventListener('click', async () => {
-      const btn = document.getElementById('runMigrations');
-      const status = document.getElementById('migrationStatus');
+    // Setup tables
+    document.getElementById('setupTables').addEventListener('click', async () => {
+      const btn = document.getElementById('setupTables');
+      const status = document.getElementById('tableStatus');
       
       btn.innerHTML = '<span class="loading"></span>Setting up tables...';
       btn.disabled = true;
@@ -396,7 +396,7 @@
         dbName: document.getElementById('dbName').value,
       };
       
-      const result = await ipcRenderer.invoke('run-migrations', config);
+      const result = await ipcRenderer.invoke('setup-tables', config);
       
       if (result.success) {
         status.className = 'status success';

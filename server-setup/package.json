@@ -21,7 +21,7 @@
   },
   "build": {
     "appId": "com.azadipos.serversetup",
-    "productName": "AzadiPOS Server Setup",
+    "productName": "AzadiPOS-ServerSetup",
     "publish": null,
     "win": {
       "target": [
@@ -37,12 +37,16 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "AzadiPOS-ServerSetup-Installer.${ext}"
+    },
+    "portable": {
+      "artifactName": "AzadiPOS-ServerSetup-Portable.${ext}"
     },
     "extraResources": [
       {
-        "from": "../prisma",
-        "to": "prisma"
+        "from": "schema.sql",
+        "to": "schema.sql"
       }
     ]
   }
