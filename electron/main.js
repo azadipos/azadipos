@@ -148,6 +148,19 @@ async function testDatabaseConnection(connectionString, timeoutMs = 5000) {
   }
 }
 
+// Get the path to Node.js executable
+function getNodePath() {
+  if (isDev) {
+    // In development, use system node
+    return 'node';
+  }
+  
+  // In production, use Electron's bundled Node.js
+  // process.execPath points to the Electron executable
+  // We need to use it with the --no-warnings flag to run Node scripts
+  return process.execPath;
+}
+
 // Start the Next.js server
 function startServer(databaseUrl) {
   const standalonePath = getStandalonePath();
@@ -176,10 +189,14 @@ function startServer(databaseUrl) {
     DATABASE_URL: databaseUrl,
     NEXTAUTH_URL: 'http://127.0.0.1:3000',
     NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET || 'azadipos-desktop-secret-key-change-in-production',
+    ELECTRON_RUN_AS_NODE: '1', // This tells Electron to behave like Node.js
   };
   
+  const nodePath = getNodePath();
+  log(`Using Node.js at: ${nodePath}`);
+  
   try {
-    const proc = spawn('node', [serverJs], {
+    const proc = spawn(nodePath, [serverJs], {
       cwd: standalonePath,
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
