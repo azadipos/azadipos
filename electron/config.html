@@ -235,6 +235,7 @@
   <div id="loadingOverlay" class="loading-overlay hidden">
     <div class="spinner"></div>
     <p id="loadingText">Connecting to database...</p>
+    <button class="btn btn-secondary" style="margin-top: 20px; width: auto; padding: 10px 30px;" onclick="cancelConnection()">Cancel</button>
   </div>
 
   <div class="container">
@@ -435,6 +436,12 @@
     
     async function openLogFile() {
       await ipcRenderer.invoke('open-log-file');
+    }
+    
+    function cancelConnection() {
+      hideLoading();
+      isStarting = false;
+      document.getElementById('statusDiv').innerHTML = '<div class="status info">Connection cancelled</div>';
     }
     
     // Load saved config on startup

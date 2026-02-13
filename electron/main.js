@@ -112,17 +112,37 @@ async function waitForServer(url, timeoutMs = 90000) {
 }
 
 // Test database connection with shorter timeout for UI responsiveness
-async function testDatabaseConnection(connectionString, timeoutMs = 8000) {
+async function testDatabaseConnection(connectionString, timeoutMs = 5000) {
   log(`Testing database connection...`);
-  const client = new Client({ connectionString, connectionTimeoutMillis: timeoutMs });
+  
+  // Add overall timeout wrapper
+  const timeoutPromise = new Promise((_, reject) => {
+    setTimeout(() => reject(new Error('Connection timed out after 5 seconds')), timeoutMs);
+  });
+  
+  const connectionPromise = (async () => {
+    const client = new Client({ 
+      connectionString, 
+      connectionTimeoutMillis: timeoutMs,
+      query_timeout: timeoutMs,
+    });
+    try {
+      await client.connect();
+      await client.query('SELECT 1');
+      await client.end();
+      log('Database connection successful');
+      return { success: true };
+    } catch (error) {
+      log(`Database connection failed: ${error.message}`);
+      try { await client.end(); } catch (e) {}
+      return { success: false, error: error.message };
+    }
+  })();
+  
   try {
-    await client.connect();
-    await client.query('SELECT 1');
-    await client.end();
-    log('Database connection successful');
-    return { success: true };
+    return await Promise.race([connectionPromise, timeoutPromise]);
   } catch (error) {
-    log(`Database connection failed: ${error.message}`);
+    log(`Database connection timed out: ${error.message}`);
     return { success: false, error: error.message };
   }
 }
