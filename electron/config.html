@@ -438,10 +438,11 @@
       await ipcRenderer.invoke('open-log-file');
     }
     
-    function cancelConnection() {
+    async function cancelConnection() {
+      await ipcRenderer.invoke('abort-connection');
       hideLoading();
       isStarting = false;
-      document.getElementById('statusDiv').innerHTML = '<div class="status info">Connection cancelled</div>';
+      document.getElementById('statusDiv').innerHTML = '<div class="status info">Connection cancelled. You can modify settings and try again.</div>';
     }
     
     // Load saved config on startup

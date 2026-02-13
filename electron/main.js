@@ -14,6 +14,7 @@ let splashWindow = null;
 let serverProcess = null;
 let serverStarted = false;
 let currentConfig = null;
+let connectionAborted = false;
 
 // Config file path
 function getConfigPath() {
@@ -341,8 +342,19 @@ ipcMain.handle('open-log-file', async () => {
   return { success: false, error: 'Log file not found' };
 });
 
+ipcMain.handle('abort-connection', async () => {
+  log('Connection abort requested');
+  connectionAborted = true;
+  if (serverProcess) {
+    serverProcess.kill();
+    serverProcess = null;
+  }
+  return { success: true };
+});
+
 ipcMain.handle('start-app', async () => {
   log('start-app IPC called');
+  connectionAborted = false; // Reset abort flag
   
   if (!currentConfig || !currentConfig.databaseUrl) {
     log('No configuration found');
@@ -352,6 +364,12 @@ ipcMain.handle('start-app', async () => {
   // Test database connection first
   log('Testing database connection before starting...');
   const dbTest = await testDatabaseConnection(currentConfig.databaseUrl);
+  
+  if (connectionAborted) {
+    log('Connection aborted by user');
+    return { success: false, error: 'Connection cancelled', aborted: true };
+  }
+  
   if (!dbTest.success) {
     log(`Database test failed: ${dbTest.error}`);
     return { success: false, error: `Database connection failed: ${dbTest.error}` };
@@ -361,6 +379,11 @@ ipcMain.handle('start-app', async () => {
   log('Starting server...');
   const serverResult = startServer(currentConfig.databaseUrl);
   
+  if (connectionAborted) {
+    if (serverResult.process) serverResult.process.kill();
+    return { success: false, error: 'Connection cancelled', aborted: true };
+  }
+  
   if (!serverResult.process) {
     log(`Server failed to start: ${serverResult.error}`);
     return { success: false, error: `Failed to start server: ${serverResult.error}` };
@@ -368,9 +391,14 @@ ipcMain.handle('start-app', async () => {
   
   serverProcess = serverResult.process;
   
-  // Wait for server to be ready
+  // Wait for server to be ready (with shorter timeout)
   log('Waiting for server to be ready...');
-  const serverReady = await waitForServer('http://127.0.0.1:3000');
+  const serverReady = await waitForServer('http://127.0.0.1:3000', 60000);
+  
+  if (connectionAborted) {
+    if (serverProcess) { serverProcess.kill(); serverProcess = null; }
+    return { success: false, error: 'Connection cancelled', aborted: true };
+  }
   
   if (!serverReady) {
     log('Server failed to become ready');
@@ -378,7 +406,7 @@ ipcMain.handle('start-app', async () => {
       serverProcess.kill();
       serverProcess = null;
     }
-    return { success: false, error: 'Server failed to start within 90 seconds. Check your database connection and try again.' };
+    return { success: false, error: 'Server failed to start within 60 seconds. Check your database connection and try again.' };
   }
   
   log('Server is ready, opening main window');
@@ -396,9 +424,10 @@ ipcMain.handle('start-app', async () => {
 // Auto-start attempt with splash screen
 async function attemptAutoStart() {
   log('Attempting auto-start with saved configuration...');
+  connectionAborted = false;
   
   updateSplashStatus('Checking saved configuration...');
-  await new Promise(r => setTimeout(r, 500));
+  await new Promise(r => setTimeout(r, 300));
   
   currentConfig = loadConfig();
   
@@ -410,13 +439,13 @@ async function attemptAutoStart() {
   
   updateSplashStatus('Testing database connection...');
   
-  // Test saved connection
-  const result = await testDatabaseConnection(currentConfig.databaseUrl);
+  // Test saved connection with short timeout
+  const result = await testDatabaseConnection(currentConfig.databaseUrl, 5000);
   
   if (!result.success) {
     log(`Saved connection failed: ${result.error}`);
-    updateSplashStatus('Connection failed, opening settings...', true);
-    await new Promise(r => setTimeout(r, 1000));
+    updateSplashStatus('Connection failed...', true);
+    await new Promise(r => setTimeout(r, 800));
     createConfigWindow(`Previous connection failed: ${result.error}`);
     return;
   }
@@ -429,7 +458,7 @@ async function attemptAutoStart() {
   if (!serverResult.process) {
     log(`Server failed to start: ${serverResult.error}`);
     updateSplashStatus('Server failed to start...', true);
-    await new Promise(r => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, 800));
     createConfigWindow(`Failed to start server: ${serverResult.error}`);
     return;
   }
@@ -437,7 +466,7 @@ async function attemptAutoStart() {
   serverProcess = serverResult.process;
   
   updateSplashStatus('Waiting for server to be ready...');
-  const serverReady = await waitForServer('http://127.0.0.1:3000');
+  const serverReady = await waitForServer('http://127.0.0.1:3000', 45000);
   
   if (!serverReady) {
     log('Server failed to start, showing config window');
@@ -445,9 +474,9 @@ async function attemptAutoStart() {
       serverProcess.kill();
       serverProcess = null;
     }
-    updateSplashStatus('Server timeout, opening settings...', true);
-    await new Promise(r => setTimeout(r, 1000));
-    createConfigWindow('Server failed to start within 90 seconds. Please check your database connection.');
+    updateSplashStatus('Server timeout...', true);
+    await new Promise(r => setTimeout(r, 800));
+    createConfigWindow('Server failed to start within 45 seconds. Please check your database connection.');
     return;
   }
   
