@@ -25,6 +25,8 @@ import {
   Heart,
   Tag,
   Percent,
+  AlertTriangle,
+  ShieldAlert,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -70,6 +72,7 @@ interface SearchItem {
   barcode: string;
   price: number;
   isWeightPriced: boolean;
+  isAgeRestricted: boolean;
   category: { id: string; taxRate: number } | null;
 }
 
@@ -124,6 +127,11 @@ export default function TransactionPage() {
   const [searchResults, setSearchResults] = useState<SearchItem[]>([]);
   const [showSearch, setShowSearch] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
+  
+  // Age verification state
+  const [ageVerifyModalOpen, setAgeVerifyModalOpen] = useState(false);
+  const [pendingAgeRestrictedItem, setPendingAgeRestrictedItem] = useState<SearchItem | null>(null);
+  const [pendingAgeRestrictedQty, setPendingAgeRestrictedQty] = useState(1);
   
   // Constants for detection
   const SCANNER_THRESHOLD_MS = 50;  // Scanners type < 50ms between keys
@@ -180,7 +188,7 @@ export default function TransactionPage() {
   useEffect(() => {
     const focusInput = () => {
       // Don't refocus if any modal is open
-      if (!weightModalOpen && !customerModalOpen && barcodeInputRef.current) {
+      if (!weightModalOpen && !customerModalOpen && !ageVerifyModalOpen && barcodeInputRef.current) {
         barcodeInputRef.current.focus();
       }
     };
@@ -189,14 +197,14 @@ export default function TransactionPage() {
     
     // Refocus after any interaction, but only if modals are closed
     const handleClick = () => {
-      if (!weightModalOpen && !customerModalOpen) {
+      if (!weightModalOpen && !customerModalOpen && !ageVerifyModalOpen) {
         setTimeout(focusInput, 100);
       }
     };
     document.addEventListener("click", handleClick);
     
     return () => document.removeEventListener("click", handleClick);
-  }, [weightModalOpen, customerModalOpen]);
+  }, [weightModalOpen, customerModalOpen, ageVerifyModalOpen]);
   
   // Search items - optimized with debounce
   const searchItems = useCallback(async (query: string) => {
@@ -256,6 +264,15 @@ export default function TransactionPage() {
       }
       
       const item = await res.json();
+      
+      // Check for age restriction first
+      if (item.isAgeRestricted) {
+        setPendingAgeRestrictedItem(item);
+        setPendingAgeRestrictedQty(1);
+        setAgeVerifyModalOpen(true);
+        setBarcode("");
+        return;
+      }
       
       if (item.isWeightPriced) {
         setPendingWeightItem(item);
@@ -493,6 +510,31 @@ export default function TransactionPage() {
     barcodeInputRef.current?.focus();
   };
   
+  // Age verification handlers
+  const handleAgeVerifyConfirm = () => {
+    if (pendingAgeRestrictedItem) {
+      // Check if it's weight-priced
+      if (pendingAgeRestrictedItem.isWeightPriced) {
+        setPendingWeightItem(pendingAgeRestrictedItem);
+        setWeightModalOpen(true);
+        setWeightInput("");
+      } else {
+        addItemToCart(pendingAgeRestrictedItem, pendingAgeRestrictedQty);
+      }
+    }
+    setAgeVerifyModalOpen(false);
+    setPendingAgeRestrictedItem(null);
+    setPendingAgeRestrictedQty(1);
+    barcodeInputRef.current?.focus();
+  };
+  
+  const handleAgeVerifyCancel = () => {
+    setAgeVerifyModalOpen(false);
+    setPendingAgeRestrictedItem(null);
+    setPendingAgeRestrictedQty(1);
+    barcodeInputRef.current?.focus();
+  };
+  
   const updateQuantity = (cartItemId: string, delta: number) => {
     setCart((prevCart) =>
       prevCart
@@ -515,6 +557,12 @@ export default function TransactionPage() {
   const promotionSavings = useMemo(() => {
     const savings: PromotionSaving[] = [];
     if (!cart || cart.length === 0 || !promotions || promotions.length === 0) return savings;
+    
+    // Debug logging
+    console.log("Calculating promotions:", { 
+      cartItems: cart.map(c => ({ itemId: c.itemId, categoryId: c.categoryId, name: c.name })), 
+      activePromotions: promotions.map(p => ({ id: p.id, name: p.name, type: p.type, config: p.configJson }))
+    });
     
     for (const promo of promotions) {
       if (!promo.configJson) continue;
@@ -811,6 +859,16 @@ export default function TransactionPage() {
   };
   
   const selectSearchItem = (item: SearchItem) => {
+    // Check for age restriction
+    if (item.isAgeRestricted) {
+      setPendingAgeRestrictedItem(item);
+      setPendingAgeRestrictedQty(1);
+      setAgeVerifyModalOpen(true);
+      setBarcode("");
+      setShowSearch(false);
+      return;
+    }
+    
     if (item.isWeightPriced) {
       setPendingWeightItem(item);
       setWeightModalOpen(true);
@@ -912,6 +970,9 @@ export default function TransactionPage() {
                         <p className="text-sm text-gray-500 font-mono">{item.barcode}</p>
                       </div>
                       <div className="flex items-center gap-2">
+                        {item.isAgeRestricted && (
+                          <ShieldAlert className="h-4 w-4 text-amber-400" title="Age Restricted" />
+                        )}
                         {item.isWeightPriced && (
                           <Scale className="h-4 w-4 text-yellow-400" />
                         )}
@@ -1190,6 +1251,49 @@ export default function TransactionPage() {
           >
             Add to Cart
           </Button>
+        </div>
+      </Modal>
+      
+      {/* Age verification modal */}
+      <Modal
+        isOpen={ageVerifyModalOpen}
+        onClose={handleAgeVerifyCancel}
+        title="Age Verification Required"
+      >
+        <div className="space-y-4">
+          <div className="flex items-center justify-center gap-3 text-amber-400 bg-amber-500/10 p-4 rounded-lg">
+            <ShieldAlert className="h-8 w-8" />
+            <span className="text-lg font-medium">Age-Restricted Item</span>
+          </div>
+          
+          <div className="text-center py-4">
+            <p className="text-xl font-semibold mb-2">{pendingAgeRestrictedItem?.name}</p>
+            <p className="text-green-400 text-lg">
+              {formatCurrency(pendingAgeRestrictedItem?.price ?? 0)}
+            </p>
+          </div>
+          
+          <div className="bg-gray-800 rounded-lg p-4">
+            <p className="text-center text-gray-300">
+              This item requires age verification. Please verify the customer is of legal age before proceeding.
+            </p>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-3 pt-2">
+            <Button
+              variant="outline"
+              className="h-14 text-lg border-gray-600"
+              onClick={handleAgeVerifyCancel}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="h-14 text-lg bg-green-600 hover:bg-green-700"
+              onClick={handleAgeVerifyConfirm}
+            >
+              Age Verified ✓
+            </Button>
+          </div>
         </div>
       </Modal>
       

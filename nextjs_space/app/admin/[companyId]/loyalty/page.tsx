@@ -166,7 +166,7 @@ export default function LoyaltyPage() {
     }
   };
   
-  const addTier = () => {
+  const addTier = async () => {
     if (!newTierPoints || !newTierValue) return;
     const tier: RewardTier = {
       points: parseInt(newTierPoints),
@@ -174,16 +174,56 @@ export default function LoyaltyPage() {
       value: parseFloat(newTierValue),
       description: newTierDesc || undefined,
     };
-    setRewardTiers([...rewardTiers, tier].sort((a, b) => a.points - b.points));
+    const newTiers = [...rewardTiers, tier].sort((a, b) => a.points - b.points);
+    setRewardTiers(newTiers);
     setTierModalOpen(false);
     setNewTierPoints("");
     setNewTierType("percent_off");
     setNewTierValue("");
     setNewTierDesc("");
+    
+    // Auto-save
+    setSaving(true);
+    try {
+      await fetch("/api/loyalty", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId,
+          isEnabled,
+          pointsPerDollar: parseFloat(pointsPerDollar) || 1,
+          rewardTiers: newTiers,
+        }),
+      });
+    } catch (err) {
+      console.error("Failed to save tier:", err);
+    } finally {
+      setSaving(false);
+    }
   };
   
-  const removeTier = (idx: number) => {
-    setRewardTiers(rewardTiers.filter((_, i) => i !== idx));
+  const removeTier = async (idx: number) => {
+    const newTiers = rewardTiers.filter((_, i) => i !== idx);
+    setRewardTiers(newTiers);
+    
+    // Auto-save
+    setSaving(true);
+    try {
+      await fetch("/api/loyalty", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId,
+          isEnabled,
+          pointsPerDollar: parseFloat(pointsPerDollar) || 1,
+          rewardTiers: newTiers,
+        }),
+      });
+    } catch (err) {
+      console.error("Failed to save after tier removal:", err);
+    } finally {
+      setSaving(false);
+    }
   };
   
   const getTierTypeLabel = (type: RewardTier["type"]) => {

@@ -38,6 +38,7 @@ export async function GET(request: Request) {
         barcode: true,
         price: true,
         isWeightPriced: true,
+        isAgeRestricted: true,
         category: {
           select: {
             id: true,
