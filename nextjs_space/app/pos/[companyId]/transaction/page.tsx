@@ -27,6 +27,8 @@ import {
   Percent,
   AlertTriangle,
   ShieldAlert,
+  Award,
+  Star,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -91,6 +93,25 @@ interface AppliedGiftCard {
   giftCardId: string;
 }
 
+interface RewardTier {
+  points: number;
+  type: "percent_off" | "cash_off" | "free_item";
+  value: number;
+  description?: string;
+}
+
+interface LoyaltyConfig {
+  pointsPerDollar: number;
+  rewardTiersJson: string | null;
+  isEnabled: boolean;
+}
+
+interface AppliedReward {
+  tier: RewardTier;
+  discount: number;
+  description: string;
+}
+
 export default function TransactionPage() {
   const params = useParams();
   const router = useRouter();
@@ -132,6 +153,12 @@ export default function TransactionPage() {
   const [ageVerifyModalOpen, setAgeVerifyModalOpen] = useState(false);
   const [pendingAgeRestrictedItem, setPendingAgeRestrictedItem] = useState<SearchItem | null>(null);
   const [pendingAgeRestrictedQty, setPendingAgeRestrictedQty] = useState(1);
+  
+  // Loyalty rewards state
+  const [loyaltyConfig, setLoyaltyConfig] = useState<LoyaltyConfig | null>(null);
+  const [rewardTiers, setRewardTiers] = useState<RewardTier[]>([]);
+  const [rewardModalOpen, setRewardModalOpen] = useState(false);
+  const [appliedReward, setAppliedReward] = useState<AppliedReward | null>(null);
   
   // Constants for detection
   const SCANNER_THRESHOLD_MS = 50;  // Scanners type < 50ms between keys
@@ -184,11 +211,38 @@ export default function TransactionPage() {
     }
   }, [companyId]);
   
+  // Fetch loyalty config
+  useEffect(() => {
+    const fetchLoyaltyConfig = async () => {
+      try {
+        const res = await fetch(`/api/loyalty?companyId=${companyId}`);
+        if (res.ok) {
+          const data = await res.json();
+          setLoyaltyConfig(data);
+          if (data.rewardTiersJson) {
+            try {
+              const tiers = JSON.parse(data.rewardTiersJson) as RewardTier[];
+              setRewardTiers(tiers.sort((a, b) => a.points - b.points));
+            } catch {
+              setRewardTiers([]);
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch loyalty config:", err);
+      }
+    };
+    
+    if (companyId) {
+      fetchLoyaltyConfig();
+    }
+  }, [companyId]);
+  
   // Always keep focus on barcode input (pause when modals are open)
   useEffect(() => {
     const focusInput = () => {
       // Don't refocus if any modal is open
-      if (!weightModalOpen && !customerModalOpen && !ageVerifyModalOpen && barcodeInputRef.current) {
+      if (!weightModalOpen && !customerModalOpen && !ageVerifyModalOpen && !rewardModalOpen && barcodeInputRef.current) {
         barcodeInputRef.current.focus();
       }
     };
@@ -197,14 +251,80 @@ export default function TransactionPage() {
     
     // Refocus after any interaction, but only if modals are closed
     const handleClick = () => {
-      if (!weightModalOpen && !customerModalOpen && !ageVerifyModalOpen) {
+      if (!weightModalOpen && !customerModalOpen && !ageVerifyModalOpen && !rewardModalOpen) {
         setTimeout(focusInput, 100);
       }
     };
     document.addEventListener("click", handleClick);
     
     return () => document.removeEventListener("click", handleClick);
-  }, [weightModalOpen, customerModalOpen, ageVerifyModalOpen]);
+  }, [weightModalOpen, customerModalOpen, ageVerifyModalOpen, rewardModalOpen]);
+  
+  // Check for available rewards when customer is set
+  const availableReward = useMemo(() => {
+    if (!customer || !loyaltyConfig?.isEnabled || rewardTiers.length === 0) return null;
+    if (appliedReward) return null; // Already applied a reward
+    
+    // Find the highest tier the customer qualifies for
+    const qualifyingTiers = rewardTiers.filter(tier => customer.loyaltyPoints >= tier.points);
+    if (qualifyingTiers.length === 0) return null;
+    
+    // Return the best (highest points) tier they qualify for
+    return qualifyingTiers[qualifyingTiers.length - 1];
+  }, [customer, loyaltyConfig, rewardTiers, appliedReward]);
+  
+  // Show reward alert when customer is associated and has available reward
+  useEffect(() => {
+    if (availableReward && customer && !appliedReward && !rewardModalOpen) {
+      // Small delay to not interfere with customer modal closing
+      const timer = setTimeout(() => {
+        setRewardModalOpen(true);
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [availableReward, customer, appliedReward, rewardModalOpen]);
+  
+  // Calculate reward discount based on cart
+  const calculateRewardDiscount = (tier: RewardTier): number => {
+    const currentTotals = calculateTotals();
+    const grossTotal = currentTotals.grossTotal;
+    
+    switch (tier.type) {
+      case "percent_off":
+        return Math.round((grossTotal * tier.value / 100) * 100) / 100;
+      case "cash_off":
+        return Math.min(tier.value, grossTotal);
+      case "free_item":
+        // For free item, apply up to the value as discount
+        return Math.min(tier.value, grossTotal);
+      default:
+        return 0;
+    }
+  };
+  
+  const applyReward = (tier: RewardTier) => {
+    const discount = calculateRewardDiscount(tier);
+    let description = "";
+    
+    switch (tier.type) {
+      case "percent_off":
+        description = `${tier.value}% off reward`;
+        break;
+      case "cash_off":
+        description = `${formatCurrency(tier.value)} off reward`;
+        break;
+      case "free_item":
+        description = `Free item (up to ${formatCurrency(tier.value)})`;
+        break;
+    }
+    
+    setAppliedReward({ tier, discount, description });
+    setRewardModalOpen(false);
+  };
+  
+  const removeReward = () => {
+    setAppliedReward(null);
+  };
   
   // Search items - optimized with debounce
   const searchItems = useCallback(async (query: string) => {
@@ -730,8 +850,9 @@ export default function TransactionPage() {
     
     const storeCreditTotal = appliedStoreCredits.reduce((sum, sc) => sum + sc.amount, 0);
     const giftCardTotal = appliedGiftCards.reduce((sum, gc) => sum + gc.amount, 0);
+    const loyaltyRewardDiscount = appliedReward?.discount ?? 0;
     const grossTotal = Math.max(0, discountedSubtotal) + Math.max(0, discountedTax);
-    const creditsTotal = storeCreditTotal + giftCardTotal;
+    const creditsTotal = storeCreditTotal + giftCardTotal + loyaltyRewardDiscount;
     const total = Math.max(0, grossTotal - creditsTotal);
     
     return {
@@ -741,6 +862,7 @@ export default function TransactionPage() {
       promotionSavings: Math.round(totalPromotionSavings * 100) / 100,
       storeCreditTotal: Math.round(storeCreditTotal * 100) / 100,
       giftCardTotal: Math.round(giftCardTotal * 100) / 100,
+      loyaltyRewardDiscount: Math.round(loyaltyRewardDiscount * 100) / 100,
       grossTotal: Math.round(grossTotal * 100) / 100,
       total: Math.round(total * 100) / 100,
     };
@@ -766,6 +888,12 @@ export default function TransactionPage() {
         appliedStoreCredits,
         appliedGiftCards,
         promotionSavings,
+        appliedReward: appliedReward ? {
+          tier: appliedReward.tier,
+          discount: appliedReward.discount,
+          description: appliedReward.description,
+          pointsRedeemed: appliedReward.tier.points,
+        } : null,
         customer: customer ? { id: customer.id, name: customer.name, phone: customer.phone, loyaltyPoints: customer.loyaltyPoints } : null,
       })
     );
@@ -1178,13 +1306,38 @@ export default function TransactionPage() {
                     ))}
                   </div>
                 )}
+                
+                {/* Applied Loyalty Reward */}
+                {appliedReward && (
+                  <div className="border-t border-pos-border pt-2 mt-2">
+                    <p className="text-xs text-rose-400 flex items-center gap-1 mb-2">
+                      <Award className="h-3 w-3" />
+                      Loyalty Reward Applied
+                    </p>
+                    <div className="flex justify-between items-center group">
+                      <span className="text-rose-400 text-xs">{appliedReward.description}</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-rose-400">-{formatCurrency(appliedReward.discount)}</span>
+                        <button
+                          onClick={removeReward}
+                          className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 transition-opacity"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-gray-500 mt-1">
+                      {appliedReward.tier.points} points will be redeemed
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
             
             <div className="border-t border-pos-border pt-4 mt-4">
-              {(appliedStoreCredits.length > 0 || appliedGiftCards.length > 0) && (
+              {(appliedStoreCredits.length > 0 || appliedGiftCards.length > 0 || appliedReward) && (
                 <div className="flex justify-between text-sm text-gray-400 mb-2">
-                  <span>Before Credits</span>
+                  <span>Before Credits/Rewards</span>
                   <span>{formatCurrency(totals?.grossTotal ?? 0)}</span>
                 </div>
               )}
@@ -1415,6 +1568,84 @@ export default function TransactionPage() {
                 Cancel
               </Button>
             </>
+          )}
+        </div>
+      </Modal>
+      
+      {/* Loyalty Reward Redemption Modal */}
+      <Modal
+        isOpen={rewardModalOpen}
+        onClose={() => setRewardModalOpen(false)}
+        title="Loyalty Reward Available!"
+      >
+        <div className="space-y-4">
+          <div className="flex items-center justify-center gap-3 text-rose-400 bg-rose-500/10 p-4 rounded-lg">
+            <Award className="h-8 w-8" />
+            <div className="text-center">
+              <span className="text-lg font-medium block">Reward Ready to Redeem!</span>
+              <span className="text-sm text-rose-300">{customer?.name} has {customer?.loyaltyPoints} points</span>
+            </div>
+          </div>
+          
+          {availableReward && (
+            <div className="bg-gray-800 rounded-lg p-4">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="p-2 bg-rose-600/20 rounded-full">
+                  <Star className="h-5 w-5 text-rose-400" />
+                </div>
+                <div>
+                  <p className="font-semibold">
+                    {availableReward.points.toLocaleString()} Points Reward
+                  </p>
+                  <p className="text-sm text-gray-400">
+                    {availableReward.type === "percent_off" 
+                      ? `${availableReward.value}% off entire purchase`
+                      : availableReward.type === "cash_off"
+                      ? `${formatCurrency(availableReward.value)} off purchase`
+                      : `Free item (up to ${formatCurrency(availableReward.value)})`}
+                  </p>
+                </div>
+              </div>
+              
+              {(cart?.length ?? 0) > 0 && (
+                <div className="pt-3 border-t border-gray-700">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">Discount Value</span>
+                    <span className="text-green-400 font-semibold">
+                      -{formatCurrency(calculateRewardDiscount(availableReward))}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          
+          {availableReward?.description && (
+            <p className="text-center text-sm text-gray-400">{availableReward.description}</p>
+          )}
+          
+          <div className="grid grid-cols-2 gap-3 pt-2">
+            <Button
+              variant="outline"
+              className="h-14 text-lg border-gray-600"
+              onClick={() => setRewardModalOpen(false)}
+            >
+              Skip
+            </Button>
+            <Button
+              className="h-14 text-lg bg-rose-600 hover:bg-rose-700"
+              onClick={() => availableReward && applyReward(availableReward)}
+              disabled={!availableReward || (cart?.length ?? 0) === 0}
+            >
+              <Award className="h-5 w-5 mr-2" />
+              Redeem
+            </Button>
+          </div>
+          
+          {(cart?.length ?? 0) === 0 && (
+            <p className="text-center text-amber-400 text-sm">
+              Add items to cart to redeem the reward
+            </p>
           )}
         </div>
       </Modal>
