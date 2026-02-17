@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
         employee: { select: { id: true, name: true } },
         items: {
           include: {
-            item: { include: { category: { select: { id: true, name: true } } } },
+            item: { include: { category: { select: { id: true, name: true, taxRate: true } } } },
           },
         },
       },
@@ -180,10 +180,53 @@ export async function GET(req: NextRequest) {
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 10);
     
+    // Tax breakdown by rate (for state tax reconciliation)
+    const taxByRate: { [rate: string]: { rate: number; taxableAmount: number; taxCollected: number; itemCount: number; categoryName: string } } = {};
+    
+    transactions.forEach((t) => {
+      if (t.type !== "sale" || t.status === "deleted") return;
+      
+      t.items.forEach((item) => {
+        const taxRate = item.item.category?.taxRate || 0;
+        const rateKey = taxRate.toFixed(3); // Use 3 decimal places as key
+        const categoryName = item.item.category?.name || "No Category (Tax Exempt)";
+        
+        if (!taxByRate[rateKey]) {
+          taxByRate[rateKey] = { 
+            rate: taxRate, 
+            taxableAmount: 0, 
+            taxCollected: 0, 
+            itemCount: 0,
+            categoryName: taxRate === 0 ? "Tax Exempt Items" : `${(taxRate * 100).toFixed(2)}% Rate Items`
+          };
+        }
+        
+        const lineSubtotal = item.lineTotal;
+        const lineTax = lineSubtotal * taxRate;
+        
+        taxByRate[rateKey].taxableAmount += lineSubtotal;
+        taxByRate[rateKey].taxCollected += lineTax;
+        taxByRate[rateKey].itemCount++;
+      });
+    });
+    
+    // Convert to array and sort by tax rate descending
+    const taxBreakdown = Object.values(taxByRate)
+      .sort((a, b) => b.rate - a.rate)
+      .map(entry => ({
+        rate: entry.rate,
+        ratePercent: (entry.rate * 100).toFixed(2),
+        taxableAmount: entry.taxableAmount,
+        taxCollected: entry.taxCollected,
+        itemCount: entry.itemCount,
+        categoryName: entry.categoryName
+      }));
+    
     return NextResponse.json({
       summary,
       breakdown,
       topItems,
+      taxBreakdown,
       transactionCount: transactions.length,
     });
   } catch (error) {

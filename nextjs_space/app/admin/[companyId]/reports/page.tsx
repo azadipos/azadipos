@@ -21,6 +21,8 @@ import {
   Tag,
   ArrowUp,
   ArrowDown,
+  Percent,
+  FileText,
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -58,6 +60,15 @@ interface TopItem {
   revenue: number;
 }
 
+interface TaxBreakdownItem {
+  rate: number;
+  ratePercent: string;
+  taxableAmount: number;
+  taxCollected: number;
+  itemCount: number;
+  categoryName: string;
+}
+
 export default function ReportsPage() {
   const params = useParams();
   const companyId = params?.companyId as string;
@@ -66,6 +77,7 @@ export default function ReportsPage() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [breakdown, setBreakdown] = useState<BreakdownItem[]>([]);
   const [topItems, setTopItems] = useState<TopItem[]>([]);
+  const [taxBreakdown, setTaxBreakdown] = useState<TaxBreakdownItem[]>([]);
   
   // Filters
   const [startDate, setStartDate] = useState(() => {
@@ -92,6 +104,7 @@ export default function ReportsPage() {
       setSummary(data.summary);
       setBreakdown(data.breakdown || []);
       setTopItems(data.topItems || []);
+      setTaxBreakdown(data.taxBreakdown || []);
     } catch (err) {
       console.error("Failed to fetch report:", err);
     } finally {
@@ -314,6 +327,83 @@ export default function ReportsPage() {
                 </div>
               </motion.div>
             </div>
+            
+            {/* Tax Breakdown for State Reconciliation */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.55 }}
+              className="p-4 bg-gray-800/50 border border-gray-700 rounded-lg"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <Percent className="h-5 w-5 text-amber-400" />
+                  Sales Tax Breakdown
+                  <span className="text-xs font-normal text-gray-400">(for state reconciliation)</span>
+                </h3>
+                <div className="flex items-center gap-2 text-sm text-gray-400">
+                  <FileText className="h-4 w-4" />
+                  <span>Total Tax: {formatCurrency(summary?.totalTax || 0)}</span>
+                </div>
+              </div>
+              
+              {taxBreakdown.length === 0 ? (
+                <p className="text-gray-500 text-center py-4">No tax data for selected period</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="text-left text-sm text-gray-400 border-b border-gray-700">
+                        <th className="pb-3">Tax Rate</th>
+                        <th className="pb-3 text-right">Taxable Sales</th>
+                        <th className="pb-3 text-right">Tax Collected</th>
+                        <th className="pb-3 text-right">Items</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {taxBreakdown.map((row, idx) => (
+                        <tr key={idx} className="border-b border-gray-700/50 hover:bg-gray-700/20">
+                          <td className="py-3">
+                            <div className="flex items-center gap-2">
+                              <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                row.rate === 0 
+                                  ? "bg-gray-600/50 text-gray-300" 
+                                  : "bg-amber-600/30 text-amber-300"
+                              }`}>
+                                {row.rate === 0 ? "Exempt" : `${row.ratePercent}%`}
+                              </span>
+                              <span className="text-sm text-gray-400">{row.categoryName}</span>
+                            </div>
+                          </td>
+                          <td className="py-3 text-right">
+                            {formatCurrency(row.taxableAmount)}
+                          </td>
+                          <td className="py-3 text-right font-medium text-amber-400">
+                            {formatCurrency(row.taxCollected)}
+                          </td>
+                          <td className="py-3 text-right text-gray-400">
+                            {row.itemCount}
+                          </td>
+                        </tr>
+                      ))}
+                      {/* Total row */}
+                      <tr className="bg-gray-700/30 font-medium">
+                        <td className="py-3">Total</td>
+                        <td className="py-3 text-right">
+                          {formatCurrency(taxBreakdown.reduce((sum, r) => sum + r.taxableAmount, 0))}
+                        </td>
+                        <td className="py-3 text-right text-amber-400">
+                          {formatCurrency(taxBreakdown.reduce((sum, r) => sum + r.taxCollected, 0))}
+                        </td>
+                        <td className="py-3 text-right text-gray-400">
+                          {taxBreakdown.reduce((sum, r) => sum + r.itemCount, 0)}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </motion.div>
             
             {/* Breakdown Table */}
             <motion.div

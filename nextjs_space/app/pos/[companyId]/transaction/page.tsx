@@ -971,7 +971,9 @@ export default function TransactionPage() {
                       </div>
                       <div className="flex items-center gap-2">
                         {item.isAgeRestricted && (
-                          <ShieldAlert className="h-4 w-4 text-amber-400" title="Age Restricted" />
+                          <span title="Age Restricted">
+                            <ShieldAlert className="h-4 w-4 text-amber-400" />
+                          </span>
                         )}
                         {item.isWeightPriced && (
                           <Scale className="h-4 w-4 text-yellow-400" />
