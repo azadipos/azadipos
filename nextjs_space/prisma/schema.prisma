@@ -17,6 +17,13 @@ model Company {
   // Return policy settings
   defaultReturnPeriodDays Int @default(30)
   
+  // Receipt settings
+  logoUrl        String?
+  address        String?
+  phone          String?
+  receiptHeader  String?
+  receiptFooter  String?
+  
   categories   Category[]
   vendors      Vendor[]
   items        Item[]

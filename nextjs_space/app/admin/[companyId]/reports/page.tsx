@@ -38,6 +38,9 @@ interface Summary {
   cashSales: number;
   cardSales: number;
   averageTransaction: number;
+  totalCost: number;
+  grossProfit: number;
+  profitMargin: number;
 }
 
 interface BreakdownItem {
@@ -51,6 +54,9 @@ interface BreakdownItem {
   net?: number;
   quantity?: number;
   refundCount?: number;
+  cost?: number;
+  profit?: number;
+  margin?: number;
 }
 
 interface TopItem {
@@ -58,6 +64,9 @@ interface TopItem {
   name: string;
   quantity: number;
   revenue: number;
+  cost: number;
+  profit: number;
+  margin: number;
 }
 
 interface TaxBreakdownItem {
@@ -171,7 +180,7 @@ export default function ReportsPage() {
         ) : (
           <>
             {/* Summary Cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -238,17 +247,55 @@ export default function ReportsPage() {
                 className="p-4 bg-gray-800/50 border border-gray-700 rounded-lg"
               >
                 <div className="flex items-center gap-3">
-                  <div className="p-2 bg-purple-600/20 rounded-lg">
-                    <Receipt className="h-5 w-5 text-purple-400" />
+                  <div className="p-2 bg-orange-600/20 rounded-lg">
+                    <Package className="h-5 w-5 text-orange-400" />
                   </div>
                   <div>
-                    <p className="text-sm text-gray-400">Avg Transaction</p>
-                    <p className="text-xl font-bold">
-                      {formatCurrency(summary?.averageTransaction || 0)}
+                    <p className="text-sm text-gray-400">Total Cost</p>
+                    <p className="text-xl font-bold text-orange-400">
+                      {formatCurrency(summary?.totalCost || 0)}
                     </p>
-                    <p className="text-xs text-gray-500">
-                      Cash: {formatCurrency(summary?.cashSales || 0)} | Card: {formatCurrency(summary?.cardSales || 0)}
+                    <p className="text-xs text-gray-500">Cost of goods sold</p>
+                  </div>
+                </div>
+              </motion.div>
+              
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4 }}
+                className="p-4 bg-gray-800/50 border border-gray-700 rounded-lg"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-emerald-600/20 rounded-lg">
+                    <TrendingUp className="h-5 w-5 text-emerald-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-400">Gross Profit</p>
+                    <p className={`text-xl font-bold ${(summary?.grossProfit || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {formatCurrency(summary?.grossProfit || 0)}
                     </p>
+                    <p className="text-xs text-gray-500">After costs & tax</p>
+                  </div>
+                </div>
+              </motion.div>
+              
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.5 }}
+                className="p-4 bg-gray-800/50 border border-gray-700 rounded-lg"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-purple-600/20 rounded-lg">
+                    <Percent className="h-5 w-5 text-purple-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-400">Profit Margin</p>
+                    <p className={`text-xl font-bold ${(summary?.profitMargin || 0) >= 0 ? 'text-purple-400' : 'text-red-400'}`}>
+                      {(summary?.profitMargin || 0).toFixed(1)}%
+                    </p>
+                    <p className="text-xs text-gray-500">Avg: {formatCurrency(summary?.averageTransaction || 0)}/txn</p>
                   </div>
                 </div>
               </motion.div>

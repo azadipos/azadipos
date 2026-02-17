@@ -58,7 +58,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
         companyId: params.id,
         employeeId,
         registerId: registerId || null,
-        openingBalance: openingBalance ?? 0,
+        openingBalance: openingBalance !== undefined ? openingBalance : null,
         status: "open",
       },
       include: {

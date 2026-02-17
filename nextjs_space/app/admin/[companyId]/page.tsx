@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { AdminLayout } from "@/components/admin-layout";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/loading-spinner";
-import { Package, Users, Receipt, Tags, Truck, TrendingUp, Gift, ClipboardList, DollarSign, BarChart3, AlertTriangle, ShieldCheck, FileText, Heart, CreditCard } from "lucide-react";
+import { Package, Users, Receipt, Tags, Truck, TrendingUp, Gift, ClipboardList, DollarSign, BarChart3, AlertTriangle, ShieldCheck, FileText, Heart, CreditCard, Settings } from "lucide-react";
 import { motion } from "framer-motion";
 
 interface Company {
@@ -154,6 +154,13 @@ export default function CompanyDashboard() {
       href: `/admin/${companyId}/gift-cards`,
       color: "bg-indigo-600/20 text-indigo-400",
       description: "Manage gift cards",
+    },
+    {
+      label: "Settings",
+      icon: Settings,
+      href: `/admin/${companyId}/settings`,
+      color: "bg-gray-600/20 text-gray-400",
+      description: "Store & receipts",
     },
   ];
   

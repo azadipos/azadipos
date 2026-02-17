@@ -71,7 +71,13 @@ export async function GET(request: Request) {
       return a.name.localeCompare(b.name);
     });
     
-    return NextResponse.json(sortedItems);
+    // Transform to include isAgeRestricted at top level for convenience
+    const transformedItems = sortedItems.map(item => ({
+      ...item,
+      isAgeRestricted: item.category?.isAgeRestricted ?? false,
+    }));
+    
+    return NextResponse.json(transformedItems);
   } catch (error) {
     console.error("Search error:", error);
     return NextResponse.json({ error: "Search failed" }, { status: 500 });

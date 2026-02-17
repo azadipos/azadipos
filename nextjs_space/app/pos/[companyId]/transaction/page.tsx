@@ -265,9 +265,11 @@ export default function TransactionPage() {
       
       const item = await res.json();
       
-      // Check for age restriction first
-      if (item.isAgeRestricted) {
-        setPendingAgeRestrictedItem(item);
+      // Check for age restriction first (from category)
+      const isAgeRestricted = item.category?.isAgeRestricted ?? false;
+      if (isAgeRestricted) {
+        // Add the flag to item for consistency with search results
+        setPendingAgeRestrictedItem({ ...item, isAgeRestricted: true });
         setPendingAgeRestrictedQty(1);
         setAgeVerifyModalOpen(true);
         setBarcode("");
