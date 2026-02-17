@@ -80,72 +80,156 @@ export async function DELETE(
       authorizedByName = authorizedBy?.name || null;
     }
     
-    // Instead of hard delete, mark as voided
-    const updatedTransaction = await prisma.transaction.update({
-      where: { id: params.id },
-      data: {
-        status: "deleted",
-        type: "void",
-        authorizedByEmployeeId: authorizedByEmployeeId || undefined,
-      },
-    });
-    
-    // ONLY restore inventory for POS voids/refunds, NOT admin deletes
-    // Admin deletes are for audit cleanup, not operational voids
-    if (source === "pos" && transaction.type === "sale") {
-      for (const item of transaction.items) {
-        await prisma.item.update({
-          where: { id: item.itemId },
+    // For admin deletions, we TRULY delete the transaction
+    // For POS voids, we mark as voided (keeps record for shift reconciliation)
+    if (source === "admin") {
+      // Create audit trail entry BEFORE deletion - CRITICAL for legal compliance
+      let auditTrailCreated = false;
+      let auditTrailError: string | null = null;
+      
+      try {
+        const auditEntry = await prisma.auditTrail.create({
           data: {
-            quantityOnHand: { increment: Math.abs(item.quantity) },
+            companyId: transaction.companyId,
+            action: "DELETE_TRANSACTION",
+            entityType: "transaction",
+            entityId: transaction.id,
+            description: `Transaction #${transaction.transactionNumber} permanently deleted: ${reason}`,
+            employeeId: transaction.employeeId || null,
+            employeeName: transaction.employee?.name || null,
+            authorizedById: authorizedByEmployeeId || null,
+            authorizedByName: authorizedByName,
+            metadata: JSON.stringify({
+              total: transaction.total,
+              subtotal: transaction.subtotal,
+              tax: transaction.tax,
+              type: transaction.type,
+              paymentMethod: transaction.paymentMethod,
+              source,
+              reason,
+              itemCount: transaction.items.length,
+              transactionNumber: transaction.transactionNumber,
+              transactionDate: transaction.createdAt?.toISOString() || null,
+              items: transaction.items.map(item => ({
+                itemId: item.itemId,
+                itemName: item.itemName,
+                quantity: item.quantity,
+                unitPrice: item.unitPrice,
+                lineTotal: item.lineTotal,
+              })),
+            }),
           },
         });
+        auditTrailCreated = true;
+        console.log("Audit trail entry created:", auditEntry.id);
+      } catch (auditError: any) {
+        console.error("Failed to create audit trail entry:", auditError);
+        auditTrailError = auditError?.message || "Unknown error";
+        // Don't fail the whole operation, but log the error
       }
-    }
-    
-    // Create audit trail entry - CRITICAL for legal compliance
-    let auditTrailCreated = false;
-    let auditTrailError: string | null = null;
-    
-    try {
-      const auditEntry = await prisma.auditTrail.create({
+      
+      // Restore inventory for sales that are being deleted
+      if (transaction.type === "sale" && transaction.status !== "deleted") {
+        for (const item of transaction.items) {
+          await prisma.item.update({
+            where: { id: item.itemId },
+            data: {
+              quantityOnHand: { increment: Math.abs(item.quantity) },
+            },
+          });
+        }
+      }
+      
+      // For refunds that are being deleted, deduct the inventory back
+      if (transaction.type === "refund") {
+        for (const item of transaction.items) {
+          await prisma.item.update({
+            where: { id: item.itemId },
+            data: {
+              quantityOnHand: { decrement: Math.abs(item.quantity) },
+            },
+          });
+        }
+      }
+      
+      // TRULY delete the transaction and its items (cascade handles items)
+      await prisma.transaction.delete({
+        where: { id: params.id },
+      });
+      
+      return NextResponse.json({ 
+        success: true, 
+        message: "Transaction permanently deleted",
+        deleted: true,
+        auditTrailCreated,
+        auditTrailError,
+      });
+    } else {
+      // POS void - mark as voided but keep the record
+      const updatedTransaction = await prisma.transaction.update({
+        where: { id: params.id },
         data: {
-          companyId: transaction.companyId,
-          action: source === "admin" ? "DELETE_TRANSACTION" : "VOID",
-          entityType: "transaction",
-          entityId: transaction.id,
-          description: `Transaction #${transaction.transactionNumber} ${source === "admin" ? 'deleted' : 'voided'}: ${reason}`,
-          employeeId: transaction.employeeId || null,
-          employeeName: transaction.employee?.name || null,
-          authorizedById: authorizedByEmployeeId || null,
-          authorizedByName: authorizedByName,
-          metadata: JSON.stringify({
-            total: transaction.total,
-            type: transaction.type,
-            paymentMethod: transaction.paymentMethod,
-            source,
-            reason,
-            itemCount: transaction.items.length,
-            transactionNumber: transaction.transactionNumber,
-            transactionDate: transaction.createdAt?.toISOString() || null,
-          }),
+          status: "deleted",
+          type: "void",
+          authorizedByEmployeeId: authorizedByEmployeeId || undefined,
         },
       });
-      auditTrailCreated = true;
-      console.log("Audit trail entry created:", auditEntry.id);
-    } catch (auditError: any) {
-      console.error("Failed to create audit trail entry:", auditError);
-      auditTrailError = auditError?.message || "Unknown error";
-      // Don't fail the whole operation, but log the error
+      
+      // Restore inventory for voided sales
+      if (transaction.type === "sale") {
+        for (const item of transaction.items) {
+          await prisma.item.update({
+            where: { id: item.itemId },
+            data: {
+              quantityOnHand: { increment: Math.abs(item.quantity) },
+            },
+          });
+        }
+      }
+      
+      // Create audit trail entry for void
+      let auditTrailCreated = false;
+      let auditTrailError: string | null = null;
+      
+      try {
+        const auditEntry = await prisma.auditTrail.create({
+          data: {
+            companyId: transaction.companyId,
+            action: "VOID",
+            entityType: "transaction",
+            entityId: transaction.id,
+            description: `Transaction #${transaction.transactionNumber} voided: ${reason}`,
+            employeeId: transaction.employeeId || null,
+            employeeName: transaction.employee?.name || null,
+            authorizedById: authorizedByEmployeeId || null,
+            authorizedByName: authorizedByName,
+            metadata: JSON.stringify({
+              total: transaction.total,
+              type: transaction.type,
+              paymentMethod: transaction.paymentMethod,
+              source,
+              reason,
+              itemCount: transaction.items.length,
+              transactionNumber: transaction.transactionNumber,
+              transactionDate: transaction.createdAt?.toISOString() || null,
+            }),
+          },
+        });
+        auditTrailCreated = true;
+        console.log("Audit trail entry created:", auditEntry.id);
+      } catch (auditError: any) {
+        console.error("Failed to create audit trail entry:", auditError);
+        auditTrailError = auditError?.message || "Unknown error";
+      }
+      
+      return NextResponse.json({ 
+        success: true, 
+        message: "Transaction voided successfully",
+        transaction: updatedTransaction,
+        auditTrailCreated,
+        auditTrailError,
+      });
     }
-    
-    return NextResponse.json({ 
-      success: true, 
-      message: "Transaction voided successfully",
-      transaction: updatedTransaction,
-      auditTrailCreated,
-      auditTrailError,
-    });
   } catch (error) {
     console.error("Delete transaction error:", error);
     return NextResponse.json({ error: "Failed to delete transaction" }, { status: 500 });

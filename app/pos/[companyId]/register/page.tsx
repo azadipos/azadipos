@@ -12,7 +12,6 @@ import { formatCurrency } from "@/lib/helpers";
 import {
   ArrowLeft,
   DollarSign,
-  PiggyBank,
   Check,
 } from "lucide-react";
 import { motion } from "framer-motion";
@@ -28,7 +27,7 @@ export default function RegisterPage() {
   const [pinError, setPinError] = useState("");
   const [loading, setLoading] = useState(false);
   
-  const [action, setAction] = useState<"opening" | "injection" | null>(null);
+  const [action, setAction] = useState<"injection" | null>(null);
   const [amount, setAmount] = useState("");
   const [success, setSuccess] = useState(false);
   
@@ -81,51 +80,6 @@ export default function RegisterPage() {
     } catch (err) {
       console.error("PIN verification error:", err);
       setPinError("Failed to verify PIN");
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  const handleOpeningBalance = async () => {
-    const amountValue = parseFloat(amount);
-    if (isNaN(amountValue) || amountValue < 0) return;
-    
-    setLoading(true);
-    
-    try {
-      // Update current shift with opening balance
-      if (shiftId) {
-        await fetch(`/api/shifts/${shiftId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ openingBalance: amountValue }),
-        });
-      }
-      
-      // Log as transaction
-      await fetch(`/api/companies/${companyId}/transactions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          shiftId,
-          employeeId: employee?.id,
-          type: "opening_float",
-          subtotal: amountValue,
-          tax: 0,
-          total: amountValue,
-          paymentMethod: "cash",
-          items: [],
-        }),
-      });
-      
-      setSuccess(true);
-      setAmount("");
-      setAction(null);
-      fetchShift();
-      
-      setTimeout(() => setSuccess(false), 2000);
-    } catch (err) {
-      console.error("Opening balance error:", err);
     } finally {
       setLoading(false);
     }
@@ -283,18 +237,7 @@ export default function RegisterPage() {
       
       {/* Action Buttons */}
       {!action && (
-        <div className="flex-1 flex items-center justify-center gap-6">
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setAction("opening")}
-            className="p-8 bg-pos-card border border-pos-border rounded-lg hover:border-yellow-500/50 transition-colors"
-          >
-            <PiggyBank className="h-16 w-16 text-yellow-400 mx-auto mb-4" />
-            <p className="text-lg font-semibold">Set Opening Balance</p>
-            <p className="text-sm text-gray-400">Start of shift drawer count</p>
-          </motion.button>
-          
+        <div className="flex-1 flex items-center justify-center">
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
@@ -315,13 +258,9 @@ export default function RegisterPage() {
           animate={{ opacity: 1, y: 0 }}
           className="flex-1 flex flex-col items-center justify-center max-w-xs mx-auto w-full"
         >
-          <h2 className="text-xl font-semibold mb-2">
-            {action === "opening" ? "Opening Balance" : "Cash Injection"}
-          </h2>
+          <h2 className="text-xl font-semibold mb-2">Cash Injection</h2>
           <p className="text-gray-400 text-sm mb-6">
-            {action === "opening"
-              ? "Enter the amount of cash in the drawer"
-              : "Enter the amount being added to the drawer"}
+            Enter the amount being added to the drawer
           </p>
           
           <div className="w-full p-4 bg-pos-card border border-pos-border rounded-lg mb-4">
@@ -337,7 +276,7 @@ export default function RegisterPage() {
             }}
             onClear={() => setAmount("")}
             onBackspace={() => setAmount(amount.slice(0, -1))}
-            onSubmit={action === "opening" ? handleOpeningBalance : handleCashInjection}
+            onSubmit={handleCashInjection}
             submitLabel={loading ? "..." : "Confirm"}
             showDecimal
           />
