@@ -281,6 +281,52 @@ ipcMain.handle('create-database', async (event, config) => {
   }
 });
 
+// Check if database has existing data
+ipcMain.handle('check-existing-data', async (event, config) => {
+  const { host, port, username, password, dbName } = config;
+  const client = new Client({
+    host,
+    port: parseInt(port),
+    user: username,
+    password,
+    database: dbName,
+  });
+
+  try {
+    await client.connect();
+    
+    // Check if Company table exists and has data
+    const tableCheck = await client.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_name = 'Company'
+      ) as exists
+    `);
+    
+    if (tableCheck.rows[0].exists) {
+      const countResult = await client.query('SELECT COUNT(*) as count FROM "Company"');
+      const companyCount = parseInt(countResult.rows[0].count);
+      
+      if (companyCount > 0) {
+        // Get company names for display
+        const companies = await client.query('SELECT name FROM "Company" LIMIT 5');
+        await client.end();
+        return { 
+          hasData: true, 
+          companyCount,
+          companies: companies.rows.map(r => r.name)
+        };
+      }
+    }
+    
+    await client.end();
+    return { hasData: false };
+  } catch (error) {
+    await client.end().catch(() => {});
+    return { hasData: false, error: error.message };
+  }
+});
+
 // Setup tables using raw SQL
 ipcMain.handle('setup-tables', async (event, config) => {
   const { host, port, username, password, dbName } = config;
@@ -295,7 +341,7 @@ ipcMain.handle('setup-tables', async (event, config) => {
   try {
     await client.connect();
     
-    // Get the SQL schema
+    // Get the SQL schema (uses CREATE TABLE IF NOT EXISTS - safe for existing data)
     const sql = getSchemaSQL();
     
     // Execute the SQL

@@ -1,29 +1,8 @@
 -- AzadiPOS Database Schema
--- Auto-generated from Prisma schema
-
--- Drop tables if they exist (in reverse order of dependencies)
-DROP TABLE IF EXISTS "GiftCardUsage" CASCADE;
-DROP TABLE IF EXISTS "GiftCard" CASCADE;
-DROP TABLE IF EXISTS "AuditTrail" CASCADE;
-DROP TABLE IF EXISTS "LoyaltyConfig" CASCADE;
-DROP TABLE IF EXISTS "ReturnPolicy" CASCADE;
-DROP TABLE IF EXISTS "TransactionItem" CASCADE;
-DROP TABLE IF EXISTS "Transaction" CASCADE;
-DROP TABLE IF EXISTS "StoreCredit" CASCADE;
-DROP TABLE IF EXISTS "Promotion" CASCADE;
-DROP TABLE IF EXISTS "ReceivingLog" CASCADE;
-DROP TABLE IF EXISTS "Payout" CASCADE;
-DROP TABLE IF EXISTS "Shift" CASCADE;
-DROP TABLE IF EXISTS "Item" CASCADE;
-DROP TABLE IF EXISTS "Employee" CASCADE;
-DROP TABLE IF EXISTS "Vendor" CASCADE;
-DROP TABLE IF EXISTS "Category" CASCADE;
-DROP TABLE IF EXISTS "Customer" CASCADE;
-DROP TABLE IF EXISTS "User" CASCADE;
-DROP TABLE IF EXISTS "Company" CASCADE;
+-- Safe version: Creates tables only if they don't exist (preserves data)
 
 -- Company
-CREATE TABLE "Company" (
+CREATE TABLE IF NOT EXISTS "Company" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -32,7 +11,7 @@ CREATE TABLE "Company" (
 );
 
 -- User (for admin login)
-CREATE TABLE "User" (
+CREATE TABLE IF NOT EXISTS "User" (
     "id" TEXT NOT NULL,
     "email" TEXT NOT NULL,
     "name" TEXT,
@@ -41,10 +20,10 @@ CREATE TABLE "User" (
     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "User_pkey" PRIMARY KEY ("id")
 );
-CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
+CREATE UNIQUE INDEX IF NOT EXISTS "User_email_key" ON "User"("email");
 
 -- Category
-CREATE TABLE "Category" (
+CREATE TABLE IF NOT EXISTS "Category" (
     "id" TEXT NOT NULL,
     "companyId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
@@ -55,10 +34,10 @@ CREATE TABLE "Category" (
     CONSTRAINT "Category_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "Category_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "Company"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
-CREATE UNIQUE INDEX "Category_companyId_name_key" ON "Category"("companyId", "name");
+CREATE UNIQUE INDEX IF NOT EXISTS "Category_companyId_name_key" ON "Category"("companyId", "name");
 
 -- Vendor
-CREATE TABLE "Vendor" (
+CREATE TABLE IF NOT EXISTS "Vendor" (
     "id" TEXT NOT NULL,
     "companyId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
@@ -67,10 +46,10 @@ CREATE TABLE "Vendor" (
     CONSTRAINT "Vendor_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "Vendor_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "Company"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
-CREATE UNIQUE INDEX "Vendor_companyId_name_key" ON "Vendor"("companyId", "name");
+CREATE UNIQUE INDEX IF NOT EXISTS "Vendor_companyId_name_key" ON "Vendor"("companyId", "name");
 
 -- Employee
-CREATE TABLE "Employee" (
+CREATE TABLE IF NOT EXISTS "Employee" (
     "id" TEXT NOT NULL,
     "companyId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
@@ -83,10 +62,10 @@ CREATE TABLE "Employee" (
     CONSTRAINT "Employee_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "Employee_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "Company"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
-CREATE UNIQUE INDEX "Employee_companyId_barcode_key" ON "Employee"("companyId", "barcode");
+CREATE UNIQUE INDEX IF NOT EXISTS "Employee_companyId_barcode_key" ON "Employee"("companyId", "barcode");
 
 -- Item
-CREATE TABLE "Item" (
+CREATE TABLE IF NOT EXISTS "Item" (
     "id" TEXT NOT NULL,
     "companyId" TEXT NOT NULL,
     "barcode" TEXT NOT NULL,
@@ -98,6 +77,7 @@ CREATE TABLE "Item" (
     "reorderPoint" INTEGER NOT NULL DEFAULT 0,
     "isWeightPriced" BOOLEAN NOT NULL DEFAULT false,
     "imageUrl" TEXT,
+    "isAgeRestricted" BOOLEAN NOT NULL DEFAULT false,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "quantityOnHand" INTEGER NOT NULL DEFAULT 0,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -108,12 +88,12 @@ CREATE TABLE "Item" (
     CONSTRAINT "Item_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category"("id") ON DELETE SET NULL ON UPDATE CASCADE,
     CONSTRAINT "Item_vendorId_fkey" FOREIGN KEY ("vendorId") REFERENCES "Vendor"("id") ON DELETE SET NULL ON UPDATE CASCADE
 );
-CREATE UNIQUE INDEX "Item_companyId_barcode_key" ON "Item"("companyId", "barcode");
-CREATE INDEX "Item_companyId_isActive_idx" ON "Item"("companyId", "isActive");
-CREATE INDEX "Item_companyId_name_idx" ON "Item"("companyId", "name");
+CREATE UNIQUE INDEX IF NOT EXISTS "Item_companyId_barcode_key" ON "Item"("companyId", "barcode");
+CREATE INDEX IF NOT EXISTS "Item_companyId_isActive_idx" ON "Item"("companyId", "isActive");
+CREATE INDEX IF NOT EXISTS "Item_companyId_name_idx" ON "Item"("companyId", "name");
 
 -- Shift
-CREATE TABLE "Shift" (
+CREATE TABLE IF NOT EXISTS "Shift" (
     "id" TEXT NOT NULL,
     "companyId" TEXT NOT NULL,
     "employeeId" TEXT NOT NULL,
@@ -132,7 +112,7 @@ CREATE TABLE "Shift" (
 );
 
 -- Customer
-CREATE TABLE "Customer" (
+CREATE TABLE IF NOT EXISTS "Customer" (
     "id" TEXT NOT NULL,
     "companyId" TEXT NOT NULL,
     "phone" TEXT NOT NULL,
@@ -146,10 +126,10 @@ CREATE TABLE "Customer" (
     CONSTRAINT "Customer_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "Customer_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "Company"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
-CREATE UNIQUE INDEX "Customer_companyId_phone_key" ON "Customer"("companyId", "phone");
+CREATE UNIQUE INDEX IF NOT EXISTS "Customer_companyId_phone_key" ON "Customer"("companyId", "phone");
 
 -- Transaction
-CREATE TABLE "Transaction" (
+CREATE TABLE IF NOT EXISTS "Transaction" (
     "id" TEXT NOT NULL,
     "companyId" TEXT NOT NULL,
     "shiftId" TEXT,
@@ -176,10 +156,10 @@ CREATE TABLE "Transaction" (
     CONSTRAINT "Transaction_authorizedByEmployeeId_fkey" FOREIGN KEY ("authorizedByEmployeeId") REFERENCES "Employee"("id") ON DELETE SET NULL ON UPDATE CASCADE,
     CONSTRAINT "Transaction_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "Customer"("id") ON DELETE SET NULL ON UPDATE CASCADE
 );
-CREATE UNIQUE INDEX "Transaction_companyId_transactionNumber_key" ON "Transaction"("companyId", "transactionNumber");
+CREATE UNIQUE INDEX IF NOT EXISTS "Transaction_companyId_transactionNumber_key" ON "Transaction"("companyId", "transactionNumber");
 
 -- TransactionItem
-CREATE TABLE "TransactionItem" (
+CREATE TABLE IF NOT EXISTS "TransactionItem" (
     "id" TEXT NOT NULL,
     "transactionId" TEXT NOT NULL,
     "itemId" TEXT NOT NULL,
@@ -194,7 +174,7 @@ CREATE TABLE "TransactionItem" (
 );
 
 -- Promotion
-CREATE TABLE "Promotion" (
+CREATE TABLE IF NOT EXISTS "Promotion" (
     "id" TEXT NOT NULL,
     "companyId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
@@ -209,7 +189,7 @@ CREATE TABLE "Promotion" (
 );
 
 -- StoreCredit
-CREATE TABLE "StoreCredit" (
+CREATE TABLE IF NOT EXISTS "StoreCredit" (
     "id" TEXT NOT NULL,
     "companyId" TEXT NOT NULL,
     "barcode" TEXT NOT NULL,
@@ -227,10 +207,10 @@ CREATE TABLE "StoreCredit" (
     CONSTRAINT "StoreCredit_issuedByEmployeeId_fkey" FOREIGN KEY ("issuedByEmployeeId") REFERENCES "Employee"("id") ON DELETE SET NULL ON UPDATE CASCADE,
     CONSTRAINT "StoreCredit_authorizedByEmployeeId_fkey" FOREIGN KEY ("authorizedByEmployeeId") REFERENCES "Employee"("id") ON DELETE SET NULL ON UPDATE CASCADE
 );
-CREATE UNIQUE INDEX "StoreCredit_barcode_key" ON "StoreCredit"("barcode");
+CREATE UNIQUE INDEX IF NOT EXISTS "StoreCredit_barcode_key" ON "StoreCredit"("barcode");
 
 -- ReceivingLog
-CREATE TABLE "ReceivingLog" (
+CREATE TABLE IF NOT EXISTS "ReceivingLog" (
     "id" TEXT NOT NULL,
     "companyId" TEXT NOT NULL,
     "vendorId" TEXT,
@@ -243,7 +223,7 @@ CREATE TABLE "ReceivingLog" (
 );
 
 -- Payout
-CREATE TABLE "Payout" (
+CREATE TABLE IF NOT EXISTS "Payout" (
     "id" TEXT NOT NULL,
     "companyId" TEXT NOT NULL,
     "vendorId" TEXT,
@@ -256,7 +236,7 @@ CREATE TABLE "Payout" (
 );
 
 -- ReturnPolicy
-CREATE TABLE "ReturnPolicy" (
+CREATE TABLE IF NOT EXISTS "ReturnPolicy" (
     "id" TEXT NOT NULL,
     "companyId" TEXT NOT NULL,
     "targetType" TEXT NOT NULL,
@@ -267,10 +247,10 @@ CREATE TABLE "ReturnPolicy" (
     CONSTRAINT "ReturnPolicy_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "ReturnPolicy_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "Company"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
-CREATE UNIQUE INDEX "ReturnPolicy_companyId_targetType_targetId_key" ON "ReturnPolicy"("companyId", "targetType", "targetId");
+CREATE UNIQUE INDEX IF NOT EXISTS "ReturnPolicy_companyId_targetType_targetId_key" ON "ReturnPolicy"("companyId", "targetType", "targetId");
 
 -- LoyaltyConfig
-CREATE TABLE "LoyaltyConfig" (
+CREATE TABLE IF NOT EXISTS "LoyaltyConfig" (
     "id" TEXT NOT NULL,
     "companyId" TEXT NOT NULL,
     "pointsPerDollar" DOUBLE PRECISION NOT NULL DEFAULT 1,
@@ -281,10 +261,10 @@ CREATE TABLE "LoyaltyConfig" (
     CONSTRAINT "LoyaltyConfig_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "LoyaltyConfig_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "Company"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
-CREATE UNIQUE INDEX "LoyaltyConfig_companyId_key" ON "LoyaltyConfig"("companyId");
+CREATE UNIQUE INDEX IF NOT EXISTS "LoyaltyConfig_companyId_key" ON "LoyaltyConfig"("companyId");
 
 -- GiftCard
-CREATE TABLE "GiftCard" (
+CREATE TABLE IF NOT EXISTS "GiftCard" (
     "id" TEXT NOT NULL,
     "companyId" TEXT NOT NULL,
     "barcode" TEXT NOT NULL,
@@ -298,38 +278,35 @@ CREATE TABLE "GiftCard" (
     CONSTRAINT "GiftCard_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "GiftCard_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "Company"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
-CREATE UNIQUE INDEX "GiftCard_barcode_key" ON "GiftCard"("barcode");
+CREATE UNIQUE INDEX IF NOT EXISTS "GiftCard_barcode_key" ON "GiftCard"("barcode");
 
--- GiftCardUsage
-CREATE TABLE "GiftCardUsage" (
+-- GiftCardUsage (track redemptions)
+CREATE TABLE IF NOT EXISTS "GiftCardUsage" (
     "id" TEXT NOT NULL,
     "giftCardId" TEXT NOT NULL,
     "transactionId" TEXT,
     "amount" DOUBLE PRECISION NOT NULL,
-    "balanceAfter" DOUBLE PRECISION NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "GiftCardUsage_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "GiftCardUsage_giftCardId_fkey" FOREIGN KEY ("giftCardId") REFERENCES "GiftCard"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 -- AuditTrail
-CREATE TABLE "AuditTrail" (
+CREATE TABLE IF NOT EXISTS "AuditTrail" (
     "id" TEXT NOT NULL,
     "companyId" TEXT NOT NULL,
     "action" TEXT NOT NULL,
     "entityType" TEXT NOT NULL,
-    "entityId" TEXT,
-    "description" TEXT NOT NULL,
+    "entityId" TEXT NOT NULL,
+    "description" TEXT,
     "employeeId" TEXT,
     "employeeName" TEXT,
     "authorizedById" TEXT,
     "authorizedByName" TEXT,
     "metadata" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "AuditTrail_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "AuditTrail_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "AuditTrail_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "Company"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
-CREATE INDEX "AuditTrail_companyId_createdAt_idx" ON "AuditTrail"("companyId", "createdAt");
-CREATE INDEX "AuditTrail_companyId_action_idx" ON "AuditTrail"("companyId", "action");
-
--- Success message
-SELECT 'All tables created successfully!' AS result;
+CREATE INDEX IF NOT EXISTS "AuditTrail_companyId_createdAt_idx" ON "AuditTrail"("companyId", "createdAt" DESC);
+CREATE INDEX IF NOT EXISTS "AuditTrail_companyId_action_idx" ON "AuditTrail"("companyId", "action");
