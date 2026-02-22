@@ -17,7 +17,11 @@ import {
   Eye,
   Upload,
   Printer,
+  Shield,
+  Lock,
+  ChevronRight,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { formatCurrency } from "@/lib/helpers";
 
@@ -33,9 +37,11 @@ interface CompanySettings {
 
 export default function SettingsPage() {
   const params = useParams();
+  const router = useRouter();
   const companyId = params?.companyId as string;
 
   const [loading, setLoading] = useState(true);
+  const [adminHasPassword, setAdminHasPassword] = useState(false);
   const [saving, setSaving] = useState(false);
   const [settings, setSettings] = useState<CompanySettings | null>(null);
   const [showPreview, setShowPreview] = useState(false);
@@ -44,10 +50,19 @@ export default function SettingsPage() {
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const res = await fetch(`/api/companies/${companyId}/settings`);
-        if (res.ok) {
-          const data = await res.json();
+        const [settingsRes, adminRes] = await Promise.all([
+          fetch(`/api/companies/${companyId}/settings`),
+          fetch(`/api/admin-settings?companyId=${companyId}`),
+        ]);
+        
+        if (settingsRes.ok) {
+          const data = await settingsRes.json();
           setSettings(data);
+        }
+        
+        if (adminRes.ok) {
+          const adminData = await adminRes.json();
+          setAdminHasPassword(adminData.hasPassword);
         }
       } catch (err) {
         console.error("Failed to fetch settings:", err);
@@ -465,6 +480,60 @@ export default function SettingsPage() {
                 </div>
               </div>
             )}
+          </motion.div>
+
+          {/* Admin Security */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+            className="bg-gray-800 rounded-lg p-6"
+          >
+            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <Shield className="h-5 w-5 text-blue-400" />
+              Admin Security
+            </h2>
+
+            <div className="space-y-4">
+              <div className="p-4 bg-gray-900/50 rounded-lg border border-gray-700">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-lg ${adminHasPassword ? "bg-green-600/20" : "bg-amber-600/20"}`}>
+                      <Lock className={`h-5 w-5 ${adminHasPassword ? "text-green-400" : "text-amber-400"}`} />
+                    </div>
+                    <div>
+                      <p className="font-medium">Password Protection</p>
+                      <p className="text-sm text-gray-400">
+                        {adminHasPassword
+                          ? "Admin panel is password protected"
+                          : "No password set - anyone can access admin"}
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={() => router.push(`/admin/${companyId}/admin-lock`)}
+                    className="border-gray-600"
+                  >
+                    {adminHasPassword ? "Manage" : "Set Up"}
+                    <ChevronRight className="h-4 w-4 ml-2" />
+                  </Button>
+                </div>
+              </div>
+
+              <div className="p-4 bg-blue-900/20 border border-blue-700/30 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <Shield className="h-5 w-5 text-blue-400 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-blue-200 font-medium">Security Tip</p>
+                    <p className="text-blue-200/70 text-sm">
+                      Setting an admin password protects sensitive business data from unauthorized access.
+                      A master code (default: 999999) allows recovery if you forget your password.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
           </motion.div>
         </div>
       </div>

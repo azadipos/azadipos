@@ -4,6 +4,7 @@ import { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { AdminAuthGate } from "@/components/admin-auth-gate";
 import {
   Package,
   Users,
@@ -34,7 +35,7 @@ export function AdminLayout({ children, companyId, companyName }: AdminLayoutPro
       ]
     : [];
   
-  return (
+  const layoutContent = (
     <div className="min-h-screen bg-gray-950 text-white">
       <header className="sticky top-0 z-50 w-full border-b border-gray-800 bg-gray-900/95 backdrop-blur supports-[backdrop-filter]:bg-gray-900/75">
         <div className="container flex h-16 items-center justify-between max-w-7xl mx-auto px-4">
@@ -81,4 +82,15 @@ export function AdminLayout({ children, companyId, companyName }: AdminLayoutPro
       </main>
     </div>
   );
+  
+  // Wrap with auth gate if companyId is provided
+  if (companyId) {
+    return (
+      <AdminAuthGate companyId={companyId}>
+        {layoutContent}
+      </AdminAuthGate>
+    );
+  }
+  
+  return layoutContent;
 }

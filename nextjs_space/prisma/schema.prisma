@@ -332,3 +332,45 @@ model AuditTrail {
   @@index([companyId, createdAt])
   @@index([companyId, action])
 }
+
+// Track item price changes for price optimization analysis
+model ItemPriceHistory {
+  id        String   @id @default(cuid())
+  itemId    String
+  price     Float
+  cost      Float
+  startDate DateTime @default(now())
+  endDate   DateTime?
+  createdAt DateTime @default(now())
+  
+  @@index([itemId, startDate])
+  @@index([itemId, endDate])
+}
+
+// Admin settings for password protection
+model AdminSettings {
+  id           String   @id @default(cuid())
+  companyId    String   @unique
+  adminPassword String?
+  masterCode   String   @default("999999")
+  isLocked     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// Offline sync queue for conflict resolution
+model SyncQueue {
+  id            String   @id @default(cuid())
+  companyId     String
+  entityType    String   // "transaction", "shift", etc.
+  entityData    String   // JSON serialized data
+  localId       String   // Local temporary ID
+  serverTransactionNumber String? // For receipt number conflict resolution
+  status        String   @default("pending") // pending, synced, conflict
+  conflictResolution String? // JSON for how conflict was resolved
+  createdAt     DateTime @default(now())
+  syncedAt      DateTime?
+  
+  @@index([companyId, status])
+  @@index([companyId, entityType])
+}
