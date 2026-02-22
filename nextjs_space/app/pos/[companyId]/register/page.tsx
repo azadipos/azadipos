@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Modal } from "@/components/modal";
 import { NumericKeypad } from "@/components/numeric-keypad";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { usePOS } from "@/lib/pos-context";
@@ -13,6 +12,9 @@ import {
   ArrowLeft,
   DollarSign,
   Check,
+  ScanLine,
+  Barcode,
+  ShieldCheck,
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -20,12 +22,14 @@ export default function RegisterPage() {
   const params = useParams();
   const router = useRouter();
   const companyId = params?.companyId as string;
-  const { employee, shiftId, setShiftId } = usePOS();
+  const { employee, shiftId } = usePOS();
   
+  // Manager barcode verification (changed from PIN)
   const [managerVerified, setManagerVerified] = useState(false);
-  const [managerPin, setManagerPin] = useState("");
-  const [pinError, setPinError] = useState("");
+  const [managerBarcode, setManagerBarcode] = useState("");
+  const [barcodeError, setBarcodeError] = useState("");
   const [loading, setLoading] = useState(false);
+  const managerInputRef = useRef<HTMLInputElement>(null);
   
   const [action, setAction] = useState<"injection" | null>(null);
   const [amount, setAmount] = useState("");
@@ -45,6 +49,24 @@ export default function RegisterPage() {
     }
   }, [shiftId]);
   
+  // Auto-focus barcode input
+  useEffect(() => {
+    if (managerInputRef.current && !managerVerified && !loading) {
+      setTimeout(() => managerInputRef.current?.focus(), 100);
+    }
+  }, [managerVerified, loading]);
+  
+  // Refocus on click anywhere
+  useEffect(() => {
+    const handleClick = () => {
+      if (!managerVerified && managerInputRef.current && !loading) {
+        managerInputRef.current.focus();
+      }
+    };
+    document.addEventListener("click", handleClick);
+    return () => document.removeEventListener("click", handleClick);
+  }, [managerVerified, loading]);
+  
   const fetchShift = async () => {
     try {
       const res = await fetch(`/api/shifts/${shiftId}`);
@@ -57,31 +79,62 @@ export default function RegisterPage() {
     }
   };
   
-  const verifyManagerPin = async () => {
-    if (managerPin.length < 4) return;
+  const verifyManagerBarcode = async (scannedBarcode?: string) => {
+    const barcodeToUse = scannedBarcode || managerBarcode;
+    
+    if (!barcodeToUse.trim()) {
+      setBarcodeError("Please scan manager barcode");
+      return;
+    }
     
     setLoading(true);
-    setPinError("");
+    setBarcodeError("");
     
     try {
       const res = await fetch("/api/employees/verify-pin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ companyId, pin: managerPin, requireManager: true }),
+        body: JSON.stringify({ companyId, barcode: barcodeToUse }),
       });
       
       if (!res.ok) {
-        setPinError("Invalid manager PIN");
-        setManagerPin("");
+        setBarcodeError("Invalid barcode");
+        setManagerBarcode("");
+        return;
+      }
+      
+      const manager = await res.json();
+      
+      // Check if manager
+      if (manager.role !== "manager") {
+        setBarcodeError("Manager authorization required");
+        setManagerBarcode("");
         return;
       }
       
       setManagerVerified(true);
     } catch (err) {
-      console.error("PIN verification error:", err);
-      setPinError("Failed to verify PIN");
+      console.error("Barcode verification error:", err);
+      setBarcodeError("Failed to verify. Please try again.");
     } finally {
       setLoading(false);
+    }
+  };
+  
+  const handleBarcodeInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setManagerBarcode(value);
+    setBarcodeError("");
+    
+    // Auto-submit on scanner input (EMP- prefix with sufficient length)
+    if (value.startsWith("EMP-") && value.length >= 9) {
+      setTimeout(() => verifyManagerBarcode(value), 100);
+    }
+  };
+  
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && managerBarcode.trim()) {
+      verifyManagerBarcode();
     }
   };
   
@@ -134,7 +187,7 @@ export default function RegisterPage() {
   
   if (!employee) return null;
   
-  // Manager PIN verification screen
+  // Manager barcode verification screen
   if (!managerVerified) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-4">
@@ -153,37 +206,62 @@ export default function RegisterPage() {
           className="text-center mb-8"
         >
           <div className="w-20 h-20 bg-pos-card rounded-full flex items-center justify-center mx-auto mb-4 border border-pos-border">
-            <DollarSign className="h-10 w-10 text-yellow-400" />
+            <ShieldCheck className="h-10 w-10 text-yellow-400" />
           </div>
           <h1 className="text-2xl font-bold">Register Management</h1>
-          <p className="text-gray-400 mt-2">Enter manager PIN to continue</p>
+          <p className="text-gray-400 mt-2">Scan manager barcode to continue</p>
         </motion.div>
         
-        <div className="w-full max-w-xs">
-          <div className="mb-6">
-            <div className="flex items-center justify-center gap-3 p-4 bg-pos-card border border-pos-border rounded-lg">
-              {[0, 1, 2, 3].map((i) => (
-                <div
-                  key={i}
-                  className={`w-5 h-5 rounded-full transition-colors ${
-                    i < managerPin.length ? "bg-yellow-500" : "bg-gray-700"
-                  }`}
-                />
-              ))}
-            </div>
-            {pinError && (
-              <p className="text-red-400 text-center text-sm mt-2">{pinError}</p>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="w-full max-w-md"
+        >
+          <div className="p-8 bg-pos-card border-2 border-dashed border-yellow-500/50 rounded-xl flex flex-col items-center gap-4">
+            <motion.div
+              animate={{ opacity: [0.5, 1, 0.5] }}
+              transition={{ duration: 2, repeat: Infinity }}
+              className="text-yellow-400"
+            >
+              <ScanLine className="h-16 w-16" />
+            </motion.div>
+            <p className="text-gray-400 text-sm">Waiting for manager barcode scan...</p>
+            
+            <Input
+              ref={managerInputRef}
+              value={managerBarcode}
+              onChange={handleBarcodeInputChange}
+              onKeyDown={handleKeyDown}
+              placeholder="Scan manager barcode"
+              className="bg-gray-800 border-gray-600 text-white text-center font-mono text-lg tracking-wider"
+              autoComplete="off"
+            />
+            
+            {managerBarcode && (
+              <div className="flex items-center gap-2 text-yellow-400">
+                <Barcode className="h-5 w-5" />
+                <span className="font-mono">{managerBarcode}</span>
+              </div>
             )}
           </div>
           
-          <NumericKeypad
-            onKeyPress={(key) => managerPin.length < 6 && setManagerPin(managerPin + key)}
-            onClear={() => setManagerPin("")}
-            onBackspace={() => setManagerPin(managerPin.slice(0, -1))}
-            onSubmit={verifyManagerPin}
-            submitLabel={loading ? "..." : "Verify"}
-          />
-        </div>
+          {barcodeError && (
+            <p className="text-red-400 text-center text-sm mt-4">{barcodeError}</p>
+          )}
+          
+          <Button
+            onClick={() => verifyManagerBarcode()}
+            disabled={loading || !managerBarcode.trim()}
+            className="w-full h-14 text-lg mt-6 bg-yellow-600 hover:bg-yellow-700 disabled:bg-gray-700"
+          >
+            {loading ? <LoadingSpinner size="sm" /> : "Verify Manager"}
+          </Button>
+          
+          <p className="text-center text-gray-500 text-xs mt-4">
+            Only managers can access register operations
+          </p>
+        </motion.div>
       </div>
     );
   }
