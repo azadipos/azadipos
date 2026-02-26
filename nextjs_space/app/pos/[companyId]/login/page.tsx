@@ -180,8 +180,8 @@ export default function POSLoginPage() {
       
       const manager = await res.json();
       
-      // Check if manager
-      if (manager.role !== "manager") {
+      // Check if manager (API returns isManager boolean)
+      if (!manager.isManager) {
         setManagerError("Manager authorization required");
         setManagerBarcode("");
         return;

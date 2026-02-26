@@ -105,8 +105,8 @@ export default function RegisterPage() {
       
       const manager = await res.json();
       
-      // Check if manager
-      if (manager.role !== "manager") {
+      // Check if manager (API returns isManager boolean)
+      if (!manager.isManager) {
         setBarcodeError("Manager authorization required");
         setManagerBarcode("");
         return;

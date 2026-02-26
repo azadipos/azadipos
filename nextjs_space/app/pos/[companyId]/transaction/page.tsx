@@ -98,6 +98,7 @@ interface RewardTier {
   type: "percent_off" | "cash_off" | "free_item";
   value: number;
   description?: string;
+  minPurchase?: number; // Minimum purchase amount required to redeem
 }
 
 interface LoyaltyConfig {
@@ -159,6 +160,7 @@ export default function TransactionPage() {
   const [rewardTiers, setRewardTiers] = useState<RewardTier[]>([]);
   const [rewardModalOpen, setRewardModalOpen] = useState(false);
   const [appliedReward, setAppliedReward] = useState<AppliedReward | null>(null);
+  const [rewardDismissed, setRewardDismissed] = useState(false); // Prevent modal from auto-reopening
   
   // Constants for detection
   const SCANNER_THRESHOLD_MS = 50;  // Scanners type < 50ms between keys
@@ -183,6 +185,38 @@ export default function TransactionPage() {
       router.push(`/pos/${companyId}/login`);
     }
   }, [employee, companyId, router]);
+  
+  // Restore cart from sessionStorage on mount (for when returning from payment page)
+  useEffect(() => {
+    const savedCart = sessionStorage.getItem("pos_cart_draft");
+    if (savedCart) {
+      try {
+        const parsed = JSON.parse(savedCart);
+        if (parsed.items && Array.isArray(parsed.items) && parsed.items.length > 0) {
+          setCart(parsed.items);
+          if (parsed.appliedStoreCredits) setAppliedStoreCredits(parsed.appliedStoreCredits);
+          if (parsed.appliedGiftCards) setAppliedGiftCards(parsed.appliedGiftCards);
+          if (parsed.customer) setCustomer(parsed.customer);
+          if (parsed.appliedReward) setAppliedReward(parsed.appliedReward);
+        }
+      } catch (e) {
+        console.error("Failed to restore cart:", e);
+      }
+    }
+  }, []);
+  
+  // Persist cart to sessionStorage whenever it changes (for back navigation)
+  useEffect(() => {
+    if (cart.length > 0 || appliedStoreCredits.length > 0 || appliedGiftCards.length > 0 || customer) {
+      sessionStorage.setItem("pos_cart_draft", JSON.stringify({
+        items: cart,
+        appliedStoreCredits,
+        appliedGiftCards,
+        customer,
+        appliedReward,
+      }));
+    }
+  }, [cart, appliedStoreCredits, appliedGiftCards, customer, appliedReward]);
   
   // Fetch active promotions
   useEffect(() => {
@@ -275,14 +309,15 @@ export default function TransactionPage() {
   
   // Show reward alert when customer is associated and has available reward
   useEffect(() => {
-    if (availableReward && customer && !appliedReward && !rewardModalOpen) {
+    // Don't show if dismissed, already applied, or modal is open
+    if (availableReward && customer && !appliedReward && !rewardModalOpen && !rewardDismissed) {
       // Small delay to not interfere with customer modal closing
       const timer = setTimeout(() => {
         setRewardModalOpen(true);
       }, 300);
       return () => clearTimeout(timer);
     }
-  }, [availableReward, customer, appliedReward, rewardModalOpen]);
+  }, [availableReward, customer, appliedReward, rewardModalOpen, rewardDismissed]);
   
   // Calculate reward discount based on cart
   const calculateRewardDiscount = (tier: RewardTier): number => {
@@ -324,6 +359,19 @@ export default function TransactionPage() {
   
   const removeReward = () => {
     setAppliedReward(null);
+  };
+  
+  // Clear entire transaction
+  const clearTransaction = () => {
+    setCart([]);
+    setAppliedStoreCredits([]);
+    setAppliedGiftCards([]);
+    setAppliedReward(null);
+    setCustomer(null);
+    setRewardDismissed(false);
+    setError("");
+    sessionStorage.removeItem("pos_cart_draft");
+    barcodeInputRef.current?.focus();
   };
   
   // Search items - optimized with debounce
@@ -898,6 +946,9 @@ export default function TransactionPage() {
       })
     );
     
+    // Clear draft so it doesn't restore if user navigates away after payment
+    sessionStorage.removeItem("pos_cart_draft");
+    
     router.push(`/pos/${companyId}/payment`);
   };
   
@@ -1026,22 +1077,36 @@ export default function TransactionPage() {
           Back
         </Button>
         
-        {/* Customer Button */}
-        <button
-          onClick={() => setCustomerModalOpen(true)}
-          className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors ${
-            customer 
-              ? 'bg-green-900/30 border-green-600/50 text-green-400' 
-              : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'
-          }`}
-        >
-          <User className="h-4 w-4" />
-          {customer ? (
-            <span>{customer.name} • {customer.loyaltyPoints} pts</span>
-          ) : (
-            <span>Add Customer</span>
+        <div className="flex items-center gap-2">
+          {/* Customer Button */}
+          <button
+            onClick={() => setCustomerModalOpen(true)}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors ${
+              customer 
+                ? 'bg-green-900/30 border-green-600/50 text-green-400' 
+                : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'
+            }`}
+          >
+            <User className="h-4 w-4" />
+            {customer ? (
+              <span>{customer.name} • {customer.loyaltyPoints} pts</span>
+            ) : (
+              <span>Add Customer</span>
+            )}
+          </button>
+          
+          {/* Clear Transaction Button */}
+          {(cart.length > 0 || appliedStoreCredits.length > 0 || appliedGiftCards.length > 0 || customer) && (
+            <Button
+              variant="ghost"
+              onClick={clearTransaction}
+              className="text-red-400 hover:text-red-300 hover:bg-red-900/20"
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Clear
+            </Button>
           )}
-        </button>
+        </div>
         
         <div className="text-right">
           <p className="font-mono text-sm text-gray-400">{transactionId}</p>
@@ -1494,10 +1559,58 @@ export default function TransactionPage() {
                 </div>
               </div>
               
+              {/* Show available reward if not yet applied */}
+              {availableReward && !appliedReward && (
+                <div className="p-3 bg-rose-900/30 border border-rose-600/50 rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Award className="h-5 w-5 text-rose-400" />
+                      <div>
+                        <p className="font-medium text-rose-300">Reward Available!</p>
+                        <p className="text-xs text-rose-400">
+                          {availableReward.points.toLocaleString()} pts • {" "}
+                          {availableReward.type === "percent_off" 
+                            ? `${availableReward.value}% off`
+                            : availableReward.type === "cash_off"
+                            ? `${formatCurrency(availableReward.value)} off`
+                            : `Free item`}
+                          {availableReward.minPurchase ? ` (min ${formatCurrency(availableReward.minPurchase)})` : ""}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setCustomerModalOpen(false);
+                        setRewardDismissed(false);
+                        setTimeout(() => setRewardModalOpen(true), 100);
+                      }}
+                      className="bg-rose-600 hover:bg-rose-700"
+                    >
+                      Apply
+                    </Button>
+                  </div>
+                </div>
+              )}
+              
+              {/* Show applied reward */}
+              {appliedReward && (
+                <div className="p-3 bg-green-900/30 border border-green-600/50 rounded-lg">
+                  <div className="flex items-center gap-2 text-green-400">
+                    <Award className="h-5 w-5" />
+                    <span className="font-medium">Reward Applied: {appliedReward.description}</span>
+                  </div>
+                </div>
+              )}
+              
               <div className="flex gap-3">
                 <Button
                   variant="outline"
-                  onClick={() => setCustomer(null)}
+                  onClick={() => {
+                    setCustomer(null);
+                    setAppliedReward(null);
+                    setRewardDismissed(false);
+                  }}
                   className="flex-1 border-gray-600"
                 >
                   Remove Customer
@@ -1575,7 +1688,10 @@ export default function TransactionPage() {
       {/* Loyalty Reward Redemption Modal */}
       <Modal
         isOpen={rewardModalOpen}
-        onClose={() => setRewardModalOpen(false)}
+        onClose={() => {
+          setRewardModalOpen(false);
+          setRewardDismissed(true); // Prevent auto-reopening
+        }}
         title="Loyalty Reward Available!"
       >
         <div className="space-y-4">
@@ -1624,18 +1740,39 @@ export default function TransactionPage() {
             <p className="text-center text-sm text-gray-400">{availableReward.description}</p>
           )}
           
+          {/* Show minimum purchase requirement if applicable */}
+          {availableReward?.minPurchase && availableReward.minPurchase > 0 && (
+            <div className="bg-amber-900/30 border border-amber-600/50 rounded-lg p-3 text-center">
+              <p className="text-amber-400 text-sm font-medium">
+                ⚠️ Minimum purchase of {formatCurrency(availableReward.minPurchase)} required
+              </p>
+              {totals.grossTotal < availableReward.minPurchase && (
+                <p className="text-amber-500 text-xs mt-1">
+                  Current total: {formatCurrency(totals.grossTotal)} — Need {formatCurrency(availableReward.minPurchase - totals.grossTotal)} more
+                </p>
+              )}
+            </div>
+          )}
+          
           <div className="grid grid-cols-2 gap-3 pt-2">
             <Button
               variant="outline"
               className="h-14 text-lg border-gray-600"
-              onClick={() => setRewardModalOpen(false)}
+              onClick={() => {
+                setRewardModalOpen(false);
+                setRewardDismissed(true); // Mark as dismissed so it doesn't reappear
+              }}
             >
-              Skip
+              Skip for Now
             </Button>
             <Button
               className="h-14 text-lg bg-rose-600 hover:bg-rose-700"
               onClick={() => availableReward && applyReward(availableReward)}
-              disabled={!availableReward || (cart?.length ?? 0) === 0}
+              disabled={
+                !availableReward || 
+                (cart?.length ?? 0) === 0 ||
+                !!(availableReward?.minPurchase && totals.grossTotal < availableReward.minPurchase)
+              }
             >
               <Award className="h-5 w-5 mr-2" />
               Redeem
@@ -1647,6 +1784,10 @@ export default function TransactionPage() {
               Add items to cart to redeem the reward
             </p>
           )}
+          
+          <p className="text-center text-gray-500 text-xs">
+            You can apply this reward later by clicking the customer button
+          </p>
         </div>
       </Modal>
     </div>
