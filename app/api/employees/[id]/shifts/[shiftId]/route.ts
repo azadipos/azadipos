@@ -73,7 +73,7 @@ export async function GET(
       voidCount: 0,
       averageTransactionValue: 0,
       storeCreditCount: storeCredits.length,
-      storeCreditTotal: storeCredits.reduce((sum, sc) => sum + sc.amount, 0),
+      storeCreditTotal: storeCredits.reduce((sum: number, sc: any) => sum + sc.amount, 0),
     };
     
     transactions.forEach((txn: any) => {
@@ -104,7 +104,7 @@ export async function GET(
     
     transactions.forEach((txn: any) => {
       if (txn.type === "refund" || txn.type === "void") {
-        const items = txn.items.map((i) => i.item?.name || "Unknown").join(", ");
+        const items = txn.items.map((i: any) => i.item?.name || "Unknown").join(", ");
         sensitiveActions.push({
           type: txn.type,
           timestamp: txn.createdAt,
@@ -148,7 +148,7 @@ export async function GET(
     return NextResponse.json({
       shift,
       stats,
-      transactions: transactions.map((t) => ({
+      transactions: transactions.map((t: any) => ({
         id: t.id,
         transactionNumber: t.transactionNumber,
         type: t.type,

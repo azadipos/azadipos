@@ -133,7 +133,7 @@ export async function GET(req: NextRequest) {
       });
       
       breakdown = Object.entries(grouped)
-        .map(([date, data]) => ({
+        .map(([date, data]: [string, any]) => ({
           date,
           ...data,
           net: data.sales - data.refunds,
@@ -194,7 +194,7 @@ export async function GET(req: NextRequest) {
       });
       
       breakdown = Object.entries(grouped)
-        .map(([id, data]) => ({ id, ...data, net: data.sales - data.refunds }))
+        .map(([id, data]: [string, any]) => ({ id, ...data, net: data.sales - data.refunds }))
         .sort((a, b) => b.sales - a.sales);
     }
     
