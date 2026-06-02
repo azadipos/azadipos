@@ -16,6 +16,7 @@ interface RewardTier {
   type: "percent_off" | "cash_off" | "free_item";
   value: number;
   description?: string;
+  minPurchase?: number; // Minimum purchase amount required to redeem
 }
 
 interface LoyaltyConfig {
@@ -66,6 +67,7 @@ export default function LoyaltyPage() {
   const [newTierType, setNewTierType] = useState<RewardTier["type"]>("percent_off");
   const [newTierValue, setNewTierValue] = useState("");
   const [newTierDesc, setNewTierDesc] = useState("");
+  const [newTierMinPurchase, setNewTierMinPurchase] = useState("");
   
   // Customer list state
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -166,24 +168,66 @@ export default function LoyaltyPage() {
     }
   };
   
-  const addTier = () => {
+  const addTier = async () => {
     if (!newTierPoints || !newTierValue) return;
     const tier: RewardTier = {
       points: parseInt(newTierPoints),
       type: newTierType,
       value: parseFloat(newTierValue),
       description: newTierDesc || undefined,
+      minPurchase: newTierMinPurchase ? parseFloat(newTierMinPurchase) : undefined,
     };
-    setRewardTiers([...rewardTiers, tier].sort((a: any, b: any) => a.points - b.points));
+    const newTiers = [...rewardTiers, tier].sort((a, b) => a.points - b.points);
+    setRewardTiers(newTiers);
     setTierModalOpen(false);
     setNewTierPoints("");
     setNewTierType("percent_off");
     setNewTierValue("");
     setNewTierDesc("");
+    setNewTierMinPurchase("");
+    
+    // Auto-save
+    setSaving(true);
+    try {
+      await fetch("/api/loyalty", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId,
+          isEnabled,
+          pointsPerDollar: parseFloat(pointsPerDollar) || 1,
+          rewardTiers: newTiers,
+        }),
+      });
+    } catch (err) {
+      console.error("Failed to save tier:", err);
+    } finally {
+      setSaving(false);
+    }
   };
   
-  const removeTier = (idx: number) => {
-    setRewardTiers(rewardTiers.filter((_, i) => i !== idx));
+  const removeTier = async (idx: number) => {
+    const newTiers = rewardTiers.filter((_, i) => i !== idx);
+    setRewardTiers(newTiers);
+    
+    // Auto-save
+    setSaving(true);
+    try {
+      await fetch("/api/loyalty", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId,
+          isEnabled,
+          pointsPerDollar: parseFloat(pointsPerDollar) || 1,
+          rewardTiers: newTiers,
+        }),
+      });
+    } catch (err) {
+      console.error("Failed to save after tier removal:", err);
+    } finally {
+      setSaving(false);
+    }
   };
   
   const getTierTypeLabel = (type: RewardTier["type"]) => {
@@ -321,6 +365,9 @@ export default function LoyaltyPage() {
                       <p className="font-medium">
                         {tier.points.toLocaleString()} points = {tier.type === "percent_off" ? `${tier.value}% off` : tier.type === "cash_off" ? formatCurrency(tier.value) + " off" : `Free item (up to ${formatCurrency(tier.value)})`}
                       </p>
+                      {tier.minPurchase && (
+                        <p className="text-sm text-amber-400">Min. purchase: {formatCurrency(tier.minPurchase)}</p>
+                      )}
                       {tier.description && (
                         <p className="text-sm text-gray-400">{tier.description}</p>
                       )}
@@ -455,6 +502,19 @@ export default function LoyaltyPage() {
               placeholder={newTierType === "percent_off" ? "e.g., 10" : "e.g., 5.00"}
               className="bg-gray-800 border-gray-600"
             />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-400 mb-1">Minimum Purchase Amount (Optional)</label>
+            <Input
+              type="number"
+              step="0.01"
+              value={newTierMinPurchase}
+              onChange={(e) => setNewTierMinPurchase(e.target.value)}
+              placeholder="e.g., 25.00"
+              className="bg-gray-800 border-gray-600"
+            />
+            <p className="text-xs text-gray-500 mt-1">Customer must spend at least this amount to redeem the reward</p>
           </div>
           
           <div>

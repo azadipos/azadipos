@@ -42,6 +42,7 @@ export async function GET(request: Request) {
           select: {
             id: true,
             taxRate: true,
+            isAgeRestricted: true,
           },
         },
       },
@@ -54,7 +55,7 @@ export async function GET(request: Request) {
     });
     
     // Sort results to prioritize barcode prefix matches
-    const sortedItems = items.sort((a: any, b: any) => {
+    const sortedItems = items.sort((a, b) => {
       const aStartsWithBarcode = a.barcode.toLowerCase().startsWith(query.toLowerCase());
       const bStartsWithBarcode = b.barcode.toLowerCase().startsWith(query.toLowerCase());
       
@@ -70,7 +71,13 @@ export async function GET(request: Request) {
       return a.name.localeCompare(b.name);
     });
     
-    return NextResponse.json(sortedItems);
+    // Transform to include isAgeRestricted at top level for convenience
+    const transformedItems = sortedItems.map(item => ({
+      ...item,
+      isAgeRestricted: item.category?.isAgeRestricted ?? false,
+    }));
+    
+    return NextResponse.json(transformedItems);
   } catch (error) {
     console.error("Search error:", error);
     return NextResponse.json({ error: "Search failed" }, { status: 500 });

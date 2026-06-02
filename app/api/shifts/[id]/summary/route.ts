@@ -31,19 +31,19 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     const transactions = shift.transactions ?? [];
     
     // Calculate summary
-    const totalSales = transactions.reduce((sum: number, t: any) => sum + (t?.total ?? 0), 0);
+    const totalSales = transactions.reduce((sum, t) => sum + (t?.total ?? 0), 0);
     const transactionCount = transactions.length;
     
-    const cashTransactions = transactions.filter((t: any) => t?.paymentMethod === "cash");
-    const cardTransactions = transactions.filter((t: any) => t?.paymentMethod === "card");
+    const cashTransactions = transactions.filter(t => t?.paymentMethod === "cash");
+    const cardTransactions = transactions.filter(t => t?.paymentMethod === "card");
     
-    const cashCollected = cashTransactions.reduce((sum: number, t: any) => {
+    const cashCollected = cashTransactions.reduce((sum, t) => {
       const cashGiven = t?.cashGiven ?? t?.total ?? 0;
       const changeDue = t?.changeDue ?? 0;
       return sum + (cashGiven - changeDue);
     }, 0);
     
-    const cardTotal = cardTransactions.reduce((sum: number, t: any) => sum + (t?.total ?? 0), 0);
+    const cardTotal = cardTransactions.reduce((sum, t) => sum + (t?.total ?? 0), 0);
     
     const expectedCash = (shift.openingBalance ?? 0) + cashCollected + (shift.cashInjections ?? 0);
     

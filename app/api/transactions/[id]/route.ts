@@ -128,29 +128,10 @@ export async function DELETE(
         // Don't fail the whole operation, but log the error
       }
       
-      // Restore inventory for sales that are being deleted
-      if (transaction.type === "sale" && transaction.status !== "deleted") {
-        for (const item of transaction.items) {
-          await prisma.item.update({
-            where: { id: item.itemId },
-            data: {
-              quantityOnHand: { increment: Math.abs(item.quantity) },
-            },
-          });
-        }
-      }
-      
-      // For refunds that are being deleted, deduct the inventory back
-      if (transaction.type === "refund") {
-        for (const item of transaction.items) {
-          await prisma.item.update({
-            where: { id: item.itemId },
-            data: {
-              quantityOnHand: { decrement: Math.abs(item.quantity) },
-            },
-          });
-        }
-      }
+      // NOTE: Inventory is NOT restored when deleting transactions from admin
+      // The inventory stays deducted as the sale DID happen - this is just removing
+      // the transaction from sales records. The audit trail serves as the evidence
+      // of what changes were made to lead to current sales totals.
       
       // TRULY delete the transaction and its items (cascade handles items)
       await prisma.transaction.delete({

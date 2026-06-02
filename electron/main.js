@@ -4,6 +4,7 @@ const { spawn } = require('child_process');
 const http = require('http');
 const fs = require('fs');
 const { Client } = require('pg');
+const crypto = require('crypto');
 
 // Completely remove menu bar
 Menu.setApplicationMenu(null);
@@ -16,17 +17,26 @@ let serverStarted = false;
 let currentConfig = null;
 let connectionAborted = false;
 
-// Config file path
+// ==================== FILE PATHS ====================
+
 function getConfigPath() {
   return path.join(app.getPath('userData'), 'azadipos-config.json');
 }
 
-// Log file path
 function getLogPath() {
   return path.join(app.getPath('userData'), 'azadipos.log');
 }
 
-// Log function - writes to both console and file
+function getOfflineQueuePath() {
+  return path.join(app.getPath('userData'), 'offline-queue.json');
+}
+
+function getTerminalIdPath() {
+  return path.join(app.getPath('userData'), 'terminal-id.txt');
+}
+
+// ==================== LOGGING ====================
+
 function log(message) {
   const timestamp = new Date().toISOString();
   const logLine = `[${timestamp}] ${message}\n`;
@@ -36,7 +46,97 @@ function log(message) {
   } catch (e) {}
 }
 
-// Load saved configuration
+// ==================== TERMINAL ID ====================
+// Each terminal gets a unique 4-character ID to prevent transaction number conflicts
+
+function generateTerminalId() {
+  // Generate a 4-character alphanumeric ID
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Removed similar-looking chars
+  let id = '';
+  for (let i = 0; i < 4; i++) {
+    id += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return id;
+}
+
+function getOrCreateTerminalId() {
+  const terminalIdPath = getTerminalIdPath();
+  try {
+    if (fs.existsSync(terminalIdPath)) {
+      const id = fs.readFileSync(terminalIdPath, 'utf8').trim();
+      if (id.length === 4) {
+        log(`Terminal ID loaded: ${id}`);
+        return id;
+      }
+    }
+  } catch (e) {
+    log(`Error reading terminal ID: ${e.message}`);
+  }
+  
+  // Generate new terminal ID
+  const newId = generateTerminalId();
+  try {
+    fs.writeFileSync(terminalIdPath, newId);
+    log(`New terminal ID generated and saved: ${newId}`);
+  } catch (e) {
+    log(`Error saving terminal ID: ${e.message}`);
+  }
+  return newId;
+}
+
+// ==================== OFFLINE QUEUE STORAGE ====================
+// Persistent storage for offline transactions (survives cache clears)
+
+function loadOfflineQueue() {
+  try {
+    const queuePath = getOfflineQueuePath();
+    if (fs.existsSync(queuePath)) {
+      const data = fs.readFileSync(queuePath, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (e) {
+    log(`Error loading offline queue: ${e.message}`);
+  }
+  return { transactions: [], counter: 0 };
+}
+
+function saveOfflineQueue(queue) {
+  try {
+    const queuePath = getOfflineQueuePath();
+    fs.writeFileSync(queuePath, JSON.stringify(queue, null, 2));
+    return true;
+  } catch (e) {
+    log(`Error saving offline queue: ${e.message}`);
+    return false;
+  }
+}
+
+function addToOfflineQueue(transaction) {
+  const queue = loadOfflineQueue();
+  queue.transactions.push(transaction);
+  saveOfflineQueue(queue);
+  log(`Added transaction to offline queue. Total pending: ${queue.transactions.length}`);
+  return queue.transactions.length;
+}
+
+function removeFromOfflineQueue(localIds) {
+  const queue = loadOfflineQueue();
+  queue.transactions = queue.transactions.filter(tx => !localIds.includes(tx.localId));
+  saveOfflineQueue(queue);
+  log(`Removed ${localIds.length} transactions from offline queue. Remaining: ${queue.transactions.length}`);
+  return queue.transactions.length;
+}
+
+function getNextOfflineCounter(companyId) {
+  const queue = loadOfflineQueue();
+  const key = `counter_${companyId}`;
+  queue[key] = (queue[key] || 0) + 1;
+  saveOfflineQueue(queue);
+  return queue[key];
+}
+
+// ==================== CONFIG MANAGEMENT ====================
+
 function loadConfig() {
   try {
     const configPath = getConfigPath();
@@ -50,7 +150,6 @@ function loadConfig() {
   return null;
 }
 
-// Save configuration
 function saveConfig(config) {
   try {
     const configPath = getConfigPath();
@@ -62,7 +161,6 @@ function saveConfig(config) {
   }
 }
 
-// Clear saved configuration
 function clearConfig() {
   try {
     const configPath = getConfigPath();
@@ -74,7 +172,8 @@ function clearConfig() {
   }
 }
 
-// Get the standalone directory path
+// ==================== SERVER MANAGEMENT ====================
+
 function getStandalonePath() {
   if (isDev) {
     return path.join(__dirname, '..', '.next', 'standalone');
@@ -82,7 +181,6 @@ function getStandalonePath() {
   return path.join(process.resourcesPath, 'standalone');
 }
 
-// Check if server is responding
 function checkServer(url) {
   return new Promise((resolve) => {
     const req = http.request(url, { method: 'HEAD', timeout: 5000 }, (res) => {
@@ -94,7 +192,6 @@ function checkServer(url) {
   });
 }
 
-// Wait for server with timeout
 async function waitForServer(url, timeoutMs = 90000) {
   const startTime = Date.now();
   log(`Waiting for server at ${url}...`);
@@ -112,11 +209,9 @@ async function waitForServer(url, timeoutMs = 90000) {
   return false;
 }
 
-// Test database connection with shorter timeout for UI responsiveness
 async function testDatabaseConnection(connectionString, timeoutMs = 5000) {
   log(`Testing database connection...`);
   
-  // Add overall timeout wrapper
   const timeoutPromise = new Promise((_, reject) => {
     setTimeout(() => reject(new Error('Connection timed out after 5 seconds')), timeoutMs);
   });
@@ -148,20 +243,13 @@ async function testDatabaseConnection(connectionString, timeoutMs = 5000) {
   }
 }
 
-// Get the path to Node.js executable
 function getNodePath() {
   if (isDev) {
-    // In development, use system node
     return 'node';
   }
-  
-  // In production, use Electron's bundled Node.js
-  // process.execPath points to the Electron executable
-  // We need to use it with the --no-warnings flag to run Node scripts
   return process.execPath;
 }
 
-// Start the Next.js server
 function startServer(databaseUrl) {
   const standalonePath = getStandalonePath();
   const serverJs = path.join(standalonePath, 'server.js');
@@ -189,7 +277,7 @@ function startServer(databaseUrl) {
     DATABASE_URL: databaseUrl,
     NEXTAUTH_URL: 'http://127.0.0.1:3000',
     NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET || 'azadipos-desktop-secret-key-change-in-production',
-    ELECTRON_RUN_AS_NODE: '1', // This tells Electron to behave like Node.js
+    ELECTRON_RUN_AS_NODE: '1',
   };
   
   const nodePath = getNodePath();
@@ -218,14 +306,14 @@ function startServer(databaseUrl) {
   }
 }
 
-// Send status update to splash window
+// ==================== WINDOW MANAGEMENT ====================
+
 function updateSplashStatus(status, isError = false) {
   if (splashWindow && !splashWindow.isDestroyed()) {
     splashWindow.webContents.send('status-update', { status, isError });
   }
 }
 
-// Create splash window that shows immediately
 function createSplashWindow() {
   splashWindow = new BrowserWindow({
     width: 450,
@@ -254,9 +342,7 @@ function createSplashWindow() {
   return splashWindow;
 }
 
-// Create configuration window
 function createConfigWindow(errorMessage = null) {
-  // Close splash if open
   if (splashWindow && !splashWindow.isDestroyed()) {
     splashWindow.close();
     splashWindow = null;
@@ -279,7 +365,6 @@ function createConfigWindow(errorMessage = null) {
   
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
-    // Send error message if there was one
     if (errorMessage) {
       setTimeout(() => {
         mainWindow.webContents.send('startup-error', errorMessage);
@@ -289,16 +374,13 @@ function createConfigWindow(errorMessage = null) {
   
   mainWindow.on('closed', () => {
     mainWindow = null;
-    // If server isn't running and window closes, quit the app
     if (!serverStarted) {
       app.quit();
     }
   });
 }
 
-// Create main application window
 function createMainWindow() {
-  // Close splash if open
   if (splashWindow && !splashWindow.isDestroyed()) {
     splashWindow.close();
     splashWindow = null;
@@ -310,6 +392,7 @@ function createMainWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js'),
     },
     autoHideMenuBar: true,
     title: 'AzadiPOS',
@@ -327,7 +410,9 @@ function createMainWindow() {
   });
 }
 
-// IPC Handlers for config window
+// ==================== IPC HANDLERS ====================
+
+// Config handlers
 ipcMain.handle('test-connection', async (event, connectionString) => {
   return await testDatabaseConnection(connectionString);
 });
@@ -371,14 +456,13 @@ ipcMain.handle('abort-connection', async () => {
 
 ipcMain.handle('start-app', async () => {
   log('start-app IPC called');
-  connectionAborted = false; // Reset abort flag
+  connectionAborted = false;
   
   if (!currentConfig || !currentConfig.databaseUrl) {
     log('No configuration found');
     return { success: false, error: 'No configuration found. Please configure database settings.' };
   }
   
-  // Test database connection first
   log('Testing database connection before starting...');
   const dbTest = await testDatabaseConnection(currentConfig.databaseUrl);
   
@@ -392,7 +476,6 @@ ipcMain.handle('start-app', async () => {
     return { success: false, error: `Database connection failed: ${dbTest.error}` };
   }
   
-  // Start the server (don't close config window yet!)
   log('Starting server...');
   const serverResult = startServer(currentConfig.databaseUrl);
   
@@ -408,7 +491,6 @@ ipcMain.handle('start-app', async () => {
   
   serverProcess = serverResult.process;
   
-  // Wait for server to be ready (with shorter timeout)
   log('Waiting for server to be ready...');
   const serverReady = await waitForServer('http://127.0.0.1:3000', 60000);
   
@@ -429,7 +511,6 @@ ipcMain.handle('start-app', async () => {
   log('Server is ready, opening main window');
   serverStarted = true;
   
-  // NOW close the config window and open main window
   if (mainWindow) {
     mainWindow.close();
   }
@@ -438,7 +519,36 @@ ipcMain.handle('start-app', async () => {
   return { success: true };
 });
 
-// Auto-start attempt with splash screen
+// ==================== OFFLINE QUEUE IPC HANDLERS ====================
+
+ipcMain.handle('get-terminal-id', async () => {
+  return getOrCreateTerminalId();
+});
+
+ipcMain.handle('get-offline-queue', async () => {
+  return loadOfflineQueue();
+});
+
+ipcMain.handle('add-offline-transaction', async (event, transaction) => {
+  return addToOfflineQueue(transaction);
+});
+
+ipcMain.handle('remove-offline-transactions', async (event, localIds) => {
+  return removeFromOfflineQueue(localIds);
+});
+
+ipcMain.handle('get-next-offline-counter', async (event, companyId) => {
+  return getNextOfflineCounter(companyId);
+});
+
+ipcMain.handle('clear-offline-queue', async () => {
+  saveOfflineQueue({ transactions: [], counter: 0 });
+  log('Offline queue cleared');
+  return { success: true };
+});
+
+// ==================== APP STARTUP ====================
+
 async function attemptAutoStart() {
   log('Attempting auto-start with saved configuration...');
   connectionAborted = false;
@@ -456,7 +566,6 @@ async function attemptAutoStart() {
   
   updateSplashStatus('Testing database connection...');
   
-  // Test saved connection with short timeout
   const result = await testDatabaseConnection(currentConfig.databaseUrl, 5000);
   
   if (!result.success) {
@@ -502,20 +611,17 @@ async function attemptAutoStart() {
   createMainWindow();
 }
 
-// App lifecycle
+// ==================== APP LIFECYCLE ====================
+
 app.whenReady().then(async () => {
   log('=== AzadiPOS Starting ===');
   log(`App path: ${app.getAppPath()}`);
   log(`User data path: ${app.getPath('userData')}`);
   log(`Is packaged: ${app.isPackaged}`);
+  log(`Terminal ID: ${getOrCreateTerminalId()}`);
   
-  // Always show splash immediately
   createSplashWindow();
-  
-  // Small delay to ensure splash is visible
   await new Promise(r => setTimeout(r, 300));
-  
-  // Attempt auto-start
   await attemptAutoStart();
 });
 

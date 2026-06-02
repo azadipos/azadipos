@@ -34,8 +34,8 @@ export async function GET(request: Request) {
     // Filter items at or below reorder point and calculate sold since last intake
     const reorderItems = await Promise.all(
       items
-        .filter((item: any) => item.quantityOnHand <= item.reorderPoint && item.reorderPoint > 0)
-        .map(async (item: any) => {
+        .filter((item) => item.quantityOnHand <= item.reorderPoint && item.reorderPoint > 0)
+        .map(async (item) => {
           // Calculate sold since last receiving (intake)
           // For now, we'll estimate based on transaction items since we don't have intake tracking yet
           const soldAgg = await prisma.transactionItem.aggregate({

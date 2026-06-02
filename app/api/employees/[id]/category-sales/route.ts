@@ -43,11 +43,11 @@ export async function GET(
     let employeeCategoryTransactions = 0;
     const flaggedTransactions: any[] = [];
     
-    transactions.forEach((txn: any) => {
+    transactions.forEach((txn) => {
       let hasCategoryItem = false;
       let categoryTotal = 0;
       
-      txn.items.forEach((item: any) => {
+      txn.items.forEach((item) => {
         if (!categoryId || item.item?.categoryId === categoryId) {
           hasCategoryItem = true;
           categoryTotal += item.lineTotal;
@@ -82,7 +82,7 @@ export async function GET(
       
       // Calculate category sales for each employee
       const employeeSales = await Promise.all(
-        employees.map(async (emp: any) => {
+        employees.map(async (emp) => {
           const empTxns = await prisma.transaction.findMany({
             where: {
               employeeId: emp.id,
@@ -102,8 +102,8 @@ export async function GET(
           let categorySales = 0;
           let categoryCount = 0;
           
-          empTxns.forEach((txn: any) => {
-            txn.items.forEach((item: any) => {
+          empTxns.forEach((txn) => {
+            txn.items.forEach((item) => {
               if (item.item?.categoryId === categoryId) {
                 categorySales += item.lineTotal;
                 categoryCount++;
@@ -123,12 +123,12 @@ export async function GET(
       );
       
       // Sort by category sales descending
-      teamComparison = employeeSales.sort((a: any, b: any) => b.categorySales - a.categorySales);
+      teamComparison = employeeSales.sort((a, b) => b.categorySales - a.categorySales);
       
       // Calculate team average (excluding managers)
-      const nonManagerSales = teamComparison.filter((e: any) => !e.isManager);
+      const nonManagerSales = teamComparison.filter((e) => !e.isManager);
       if (nonManagerSales.length > 0) {
-        teamAverage = nonManagerSales.reduce((sum: number, e: any) => sum + e.categorySales, 0) / nonManagerSales.length;
+        teamAverage = nonManagerSales.reduce((sum, e) => sum + e.categorySales, 0) / nonManagerSales.length;
       }
     }
     

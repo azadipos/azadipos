@@ -57,7 +57,7 @@ export async function GET(
         },
         // Link through transactions made by this employee in this shift
         transactionId: {
-          in: transactions.map((t: any) => t.transactionNumber),
+          in: transactions.map(t => t.transactionNumber),
         },
       },
       orderBy: { createdAt: "asc" },
@@ -73,10 +73,10 @@ export async function GET(
       voidCount: 0,
       averageTransactionValue: 0,
       storeCreditCount: storeCredits.length,
-      storeCreditTotal: storeCredits.reduce((sum: number, sc: any) => sum + sc.amount, 0),
+      storeCreditTotal: storeCredits.reduce((sum, sc) => sum + sc.amount, 0),
     };
     
-    transactions.forEach((txn: any) => {
+    transactions.forEach((txn) => {
       if (txn.type === "sale") {
         stats.totalSales += txn.total;
         stats.saleCount++;
@@ -102,9 +102,9 @@ export async function GET(
       transactionId?: string;
     }> = [];
     
-    transactions.forEach((txn: any) => {
+    transactions.forEach((txn) => {
       if (txn.type === "refund" || txn.type === "void") {
-        const items = txn.items.map((i: any) => i.item?.name || "Unknown").join(", ");
+        const items = txn.items.map((i) => i.item?.name || "Unknown").join(", ");
         sensitiveActions.push({
           type: txn.type,
           timestamp: txn.createdAt,
@@ -115,7 +115,7 @@ export async function GET(
       }
     });
     
-    storeCredits.forEach((sc: any) => {
+    storeCredits.forEach((sc) => {
       sensitiveActions.push({
         type: "store_credit",
         timestamp: sc.createdAt,
@@ -125,13 +125,13 @@ export async function GET(
     });
     
     // Sort by timestamp
-    sensitiveActions.sort((a: any, b: any) => 
+    sensitiveActions.sort((a, b) => 
       new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
     );
     
     // Hourly breakdown of transactions
     const hourlyBreakdown: { [hour: string]: { sales: number; refunds: number; count: number } } = {};
-    transactions.forEach((txn: any) => {
+    transactions.forEach((txn) => {
       const hour = new Date(txn.createdAt).getHours();
       const hourKey = `${hour}:00`;
       if (!hourlyBreakdown[hourKey]) {
@@ -148,7 +148,7 @@ export async function GET(
     return NextResponse.json({
       shift,
       stats,
-      transactions: transactions.map((t: any) => ({
+      transactions: transactions.map((t) => ({
         id: t.id,
         transactionNumber: t.transactionNumber,
         type: t.type,
@@ -159,7 +159,7 @@ export async function GET(
       })),
       sensitiveActions,
       hourlyBreakdown: Object.entries(hourlyBreakdown)
-        .sort((a: any, b: any) => parseInt(a[0]) - parseInt(b[0]))
+        .sort((a, b) => parseInt(a[0]) - parseInt(b[0]))
         .map(([hour, data]) => ({ hour, ...data })),
       storeCredits,
     });
