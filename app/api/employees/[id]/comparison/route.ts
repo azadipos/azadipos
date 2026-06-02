@@ -24,7 +24,7 @@ export async function GET(
     
     // For each employee, get their stats
     const comparison = await Promise.all(
-      employees.map(async (emp) => {
+      employees.map(async (emp: any) => {
         const [salesAgg, refundAgg, storeCreditCount] = await Promise.all([
           prisma.transaction.aggregate({
             where: { employeeId: emp.id, type: "sale" },

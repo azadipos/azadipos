@@ -160,7 +160,7 @@ export async function GET(
       sensitiveActions,
       hourlyBreakdown: Object.entries(hourlyBreakdown)
         .sort((a, b) => parseInt(a[0]) - parseInt(b[0]))
-        .map(([hour, data]) => ({ hour, ...data })),
+        .map(([hour, data]: [string, any]) => ({ hour, ...data })),
       storeCredits,
     });
   } catch (error) {
