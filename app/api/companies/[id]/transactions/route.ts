@@ -110,7 +110,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
               isEnabled: true,
             },
           });
-        } catch (e) {
+        } catch (e: any) {
           // Config may have been created by another request, try to fetch it
           loyaltyConfig = await prisma.loyaltyConfig.findUnique({
             where: { companyId: params.id },

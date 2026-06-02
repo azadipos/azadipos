@@ -87,7 +87,7 @@ export async function GET(req: NextRequest) {
             if (matchingItem && matchingItem.cost) {
               costHistory.push({ date: log.createdAt, cost: matchingItem.cost });
             }
-          } catch (e) {
+          } catch (e: any) {
             // Skip invalid JSON
           }
         }
@@ -156,7 +156,7 @@ export async function GET(req: NextRequest) {
       })).sort((a, b) => b.price - a.price);
       
       // Calculate elasticity between price points
-      const elasticityData = [];
+      const elasticityData: { fromPrice: number; toPrice: number; elasticity: number; interpretation: string }[] = [];
       for (let i = 0; i < pricePoints.length - 1; i++) {
         const higher = pricePoints[i];
         const lower = pricePoints[i + 1];
