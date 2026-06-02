@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AzadiPOS - Configuration</title>
+  <title>AzadiPOS - Setup</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -11,464 +11,397 @@
       background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
       color: #fff;
       min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
       padding: 20px;
+      overflow-y: auto;
     }
-    .container {
-      width: 100%;
-      max-width: 520px;
-    }
-    .logo {
-      text-align: center;
-      margin-bottom: 24px;
-    }
-    .logo h1 {
-      font-size: 2rem;
-      color: #4ade80;
-    }
-    .logo p {
-      color: #94a3b8;
-      margin-top: 8px;
-    }
+    .container { width: 100%; max-width: 700px; margin: 0 auto; }
+    .logo { text-align: center; margin-bottom: 20px; }
+    .logo h1 { font-size: 2rem; color: #4ade80; }
+    .logo p { color: #94a3b8; margin-top: 4px; font-size: 0.9rem; }
     .card {
       background: rgba(255,255,255,0.05);
       border: 1px solid rgba(255,255,255,0.1);
       border-radius: 16px;
-      padding: 28px;
-    }
-    .mode-selector {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-      margin-bottom: 24px;
-    }
-    .mode-btn {
-      padding: 16px;
-      border: 2px solid rgba(255,255,255,0.2);
-      border-radius: 12px;
-      background: transparent;
-      color: #fff;
-      cursor: pointer;
-      transition: all 0.2s;
-      text-align: center;
-    }
-    .mode-btn:hover {
-      border-color: rgba(74, 222, 128, 0.5);
-    }
-    .mode-btn.active {
-      border-color: #4ade80;
-      background: rgba(74, 222, 128, 0.1);
-    }
-    .mode-btn .icon {
-      font-size: 2rem;
-      margin-bottom: 8px;
-    }
-    .mode-btn .label {
-      font-weight: 600;
-      font-size: 0.95rem;
-    }
-    .mode-btn .desc {
-      font-size: 0.8rem;
-      color: #94a3b8;
-      margin-top: 4px;
-    }
-    .form-group {
+      padding: 24px;
       margin-bottom: 16px;
     }
-    .form-row {
-      display: grid;
-      grid-template-columns: 2fr 1fr;
-      gap: 12px;
+    .card h2 { font-size: 1.1rem; margin-bottom: 16px; color: #4ade80; display: flex; align-items: center; gap: 8px; }
+    .step-badge {
+      background: #4ade80; color: #1a1a2e; width: 24px; height: 24px; border-radius: 50%;
+      display: inline-flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: bold;
     }
-    label {
-      display: block;
-      margin-bottom: 6px;
-      color: #94a3b8;
-      font-size: 0.85rem;
+    .step-badge.done { background: #22c55e; }
+    .step-badge.pending { background: #64748b; }
+    label { display: block; margin-bottom: 4px; font-size: 0.85rem; color: #94a3b8; }
+    input, select {
+      width: 100%; padding: 10px 14px; background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15); border-radius: 8px;
+      color: #fff; font-size: 0.95rem; margin-bottom: 12px; outline: none;
     }
-    input, textarea {
-      width: 100%;
-      padding: 12px;
-      border: 1px solid rgba(255,255,255,0.2);
-      border-radius: 8px;
-      background: rgba(0,0,0,0.3);
-      color: #fff;
-      font-size: 1rem;
-      font-family: inherit;
-    }
-    input:focus, textarea:focus {
-      outline: none;
-      border-color: #4ade80;
-    }
-    textarea {
-      resize: none;
-      font-family: monospace;
-      font-size: 0.85rem;
-    }
+    input:focus, select:focus { border-color: #4ade80; }
+    input::placeholder { color: #64748b; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .row-3 { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 12px; }
     .btn {
-      width: 100%;
-      padding: 14px;
-      border: none;
-      border-radius: 10px;
-      font-size: 1rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s;
-      margin-top: 8px;
+      padding: 12px 20px; border: none; border-radius: 10px; font-size: 0.95rem;
+      cursor: pointer; font-weight: 600; transition: all 0.2s; width: 100%;
     }
-    .btn-primary {
-      background: #4ade80;
-      color: #1a1a2e;
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: #4ade80; color: #1a1a2e; }
+    .btn-primary:hover:not(:disabled) { background: #22c55e; }
+    .btn-secondary { background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); }
+    .btn-secondary:hover:not(:disabled) { background: rgba(255,255,255,0.2); }
+    .btn-danger { background: #ef4444; color: #fff; }
+    .btn-danger:hover:not(:disabled) { background: #dc2626; }
+    .btn-sm { padding: 8px 16px; font-size: 0.85rem; width: auto; }
+    .btn-row { display: flex; gap: 10px; margin-top: 12px; }
+    .alert {
+      padding: 12px 16px; border-radius: 10px; margin-bottom: 12px; font-size: 0.85rem;
     }
-    .btn-primary:hover {
-      background: #22c55e;
+    .alert-error { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); color: #fca5a5; }
+    .alert-success { background: rgba(74,222,128,0.15); border: 1px solid rgba(74,222,128,0.3); color: #4ade80; }
+    .alert-info { background: rgba(96,165,250,0.15); border: 1px solid rgba(96,165,250,0.3); color: #93c5fd; }
+    .alert-warning { background: rgba(251,191,36,0.15); border: 1px solid rgba(251,191,36,0.3); color: #fbbf24; }
+    .progress-bar {
+      width: 100%; height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden; margin: 8px 0;
     }
-    .btn-primary:disabled {
-      background: #4b5563;
-      color: #9ca3af;
-      cursor: not-allowed;
+    .progress-fill { height: 100%; background: #4ade80; transition: width 0.3s; border-radius: 4px; }
+    .hidden { display: none !important; }
+    .mode-selector { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+    .mode-btn {
+      padding: 16px; border: 2px solid rgba(255,255,255,0.2); border-radius: 12px;
+      background: rgba(255,255,255,0.05); cursor: pointer; text-align: center; transition: all 0.2s;
     }
-    .btn-secondary {
-      background: rgba(255,255,255,0.1);
-      color: #fff;
-    }
-    .btn-danger {
-      background: rgba(239, 68, 68, 0.2);
-      color: #ef4444;
-      border: 1px solid #ef4444;
-    }
-    .btn-danger:hover {
-      background: rgba(239, 68, 68, 0.3);
-    }
-    .status {
-      padding: 12px;
-      border-radius: 8px;
-      margin-bottom: 12px;
-      font-size: 0.9rem;
-    }
-    .status.success {
-      background: rgba(74, 222, 128, 0.2);
-      border: 1px solid #4ade80;
-      color: #4ade80;
-    }
-    .status.error {
-      background: rgba(239, 68, 68, 0.2);
-      border: 1px solid #ef4444;
-      color: #ef4444;
-    }
-    .status.info {
-      background: rgba(59, 130, 246, 0.2);
-      border: 1px solid #3b82f6;
-      color: #93c5fd;
-    }
-    .status.warning {
-      background: rgba(251, 191, 36, 0.2);
-      border: 1px solid #fbbf24;
-      color: #fbbf24;
-    }
-    .loading {
-      display: inline-block;
-      width: 18px;
-      height: 18px;
-      border: 2px solid rgba(255,255,255,0.3);
-      border-top-color: #4ade80;
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-      margin-right: 8px;
-      vertical-align: middle;
-    }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-    .hidden { display: none; }
-    .help-text {
-      font-size: 0.75rem;
-      color: #64748b;
-      margin-top: 6px;
-    }
-    .loading-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(26, 26, 46, 0.95);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      z-index: 1000;
-    }
-    .loading-overlay .spinner {
-      width: 50px;
-      height: 50px;
-      border: 4px solid rgba(255,255,255,0.2);
-      border-top-color: #4ade80;
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-      margin-bottom: 20px;
-    }
-    .loading-overlay p {
-      color: #94a3b8;
-      font-size: 1.1rem;
-    }
-    .footer-links {
-      display: flex;
-      justify-content: center;
-      gap: 20px;
-      margin-top: 16px;
-    }
-    .footer-link {
-      color: #64748b;
-      font-size: 0.85rem;
-      cursor: pointer;
-      text-decoration: underline;
-    }
-    .footer-link:hover {
-      color: #94a3b8;
-    }
+    .mode-btn:hover { border-color: rgba(74,222,128,0.5); background: rgba(74,222,128,0.05); }
+    .mode-btn.active { border-color: #4ade80; background: rgba(74,222,128,0.1); }
+    .mode-btn h3 { font-size: 1rem; margin-bottom: 4px; }
+    .mode-btn p { font-size: 0.8rem; color: #94a3b8; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+    .status-dot.green { background: #4ade80; }
+    .status-dot.red { background: #ef4444; }
+    .status-dot.yellow { background: #fbbf24; }
+    .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #4ade80; border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle; margin-right: 6px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .footer { text-align: center; margin-top: 16px; }
+    .footer a { color: #4ade80; cursor: pointer; font-size: 0.85rem; text-decoration: underline; }
+    .connection-string-box { background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; font-family: monospace; font-size: 0.8rem; word-break: break-all; margin: 8px 0; color: #94a3b8; }
   </style>
 </head>
 <body>
-  <div id="loadingOverlay" class="loading-overlay hidden">
-    <div class="spinner"></div>
-    <p id="loadingText">Connecting to database...</p>
-    <button class="btn btn-secondary" style="margin-top: 20px; width: auto; padding: 10px 30px;" onclick="cancelConnection()">Cancel</button>
-  </div>
-
   <div class="container">
     <div class="logo">
-      <h1>💻 AzadiPOS</h1>
-      <p>Point of Sale System</p>
+      <h1>⚡ AzadiPOS</h1>
+      <p>Point of Sale System Setup</p>
     </div>
-    
-    <div class="card">
-      <h2 style="margin-bottom: 16px; color: #fff; font-size: 1.1rem;">Database Configuration</h2>
-      
-      <div id="startupError"></div>
-      
+
+    <!-- Error from previous startup -->
+    <div id="startupError" class="alert alert-error hidden"></div>
+
+    <!-- Step 1: Choose Mode -->
+    <div class="card" id="modeCard">
+      <h2>What would you like to do?</h2>
       <div class="mode-selector">
-        <button class="mode-btn active" id="modeServer" onclick="setMode('server')">
-          <div class="icon">🖥️</div>
-          <div class="label">This is the Server</div>
-          <div class="desc">Database runs here</div>
-        </button>
-        <button class="mode-btn" id="modeTerminal" onclick="setMode('terminal')">
-          <div class="icon">📱</div>
-          <div class="label">Terminal Only</div>
-          <div class="desc">Connect to server</div>
-        </button>
-      </div>
-      
-      <div id="serverConfig">
-        <div class="form-row">
-          <div class="form-group">
-            <label>PostgreSQL Host</label>
-            <input type="text" id="host" value="localhost" placeholder="localhost">
-          </div>
-          <div class="form-group">
-            <label>Port</label>
-            <input type="text" id="port" value="5432" placeholder="5432">
-          </div>
+        <div class="mode-btn" id="modeServer" onclick="selectMode('server')">
+          <h3>🖥️ Server Setup</h3>
+          <p>This is the main computer. Install database here.</p>
         </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>Username</label>
-            <input type="text" id="username" value="postgres" placeholder="postgres">
-          </div>
-          <div class="form-group">
-            <label>Password</label>
-            <input type="password" id="password" placeholder="Password">
-          </div>
-        </div>
-        <div class="form-group">
-          <label>Database Name</label>
-          <input type="text" id="dbName" value="azadipos" placeholder="azadipos">
+        <div class="mode-btn" id="modeTerminal" onclick="selectMode('terminal')">
+          <h3>📱 Terminal / Connect</h3>
+          <p>Connect to an existing server on your network.</p>
         </div>
       </div>
-      
-      <div id="terminalConfig" class="hidden">
-        <div class="status info" style="margin-bottom: 16px;">
-          Enter the connection string from your server administrator or the Server Setup tool.
-        </div>
-        <div class="form-group">
-          <label>Connection String</label>
-          <textarea id="connectionString" rows="3" placeholder="postgresql://user:password@192.168.1.100:5432/azadipos"></textarea>
-          <p class="help-text">Format: postgresql://username:password@server-ip:5432/database</p>
-        </div>
+    </div>
+
+    <!-- SERVER MODE: PostgreSQL Setup -->
+    <div class="card hidden" id="pgSetupCard">
+      <h2><span class="step-badge" id="pgBadge">1</span> PostgreSQL Database</h2>
+      <div id="pgStatus"></div>
+      <div id="pgActions"></div>
+    </div>
+
+    <!-- SERVER MODE: Database Config -->
+    <div class="card hidden" id="dbSetupCard">
+      <h2><span class="step-badge">2</span> Database Configuration</h2>
+      <div class="row-3">
+        <div><label>Host</label><input type="text" id="dbHost" value="localhost" /></div>
+        <div><label>Port</label><input type="text" id="dbPort" value="5432" /></div>
+        <div><label>Database</label><input type="text" id="dbName" value="azadipos" /></div>
       </div>
-      
-      <div id="statusDiv"></div>
-      
-      <button class="btn btn-secondary" id="testBtn" onclick="testConnection()">Test Connection</button>
-      <button class="btn btn-primary" id="startBtn" onclick="saveAndStart()" disabled>Connect & Start</button>
-      
-      <div class="footer-links">
-        <span class="footer-link" onclick="resetConfig()">Reset configuration</span>
-        <span class="footer-link" onclick="openLogFile()">View logs</span>
+      <div class="row">
+        <div><label>Username</label><input type="text" id="dbUser" value="postgres" /></div>
+        <div><label>Password</label><input type="password" id="dbPass" placeholder="PostgreSQL password" /></div>
       </div>
+      <div id="dbSetupStatus"></div>
+      <div class="btn-row">
+        <button class="btn btn-secondary btn-sm" onclick="testPgConnection()">Test Connection</button>
+        <button class="btn btn-primary btn-sm" onclick="setupDatabase()">Setup Database & Connect</button>
+      </div>
+    </div>
+
+    <!-- TERMINAL MODE: Connection String -->
+    <div class="card hidden" id="terminalCard">
+      <h2><span class="step-badge">1</span> Connect to Server</h2>
+      <div class="alert alert-info">Enter the connection string from your server computer, or fill in the details below.</div>
+      <label>Connection String</label>
+      <input type="text" id="connString" placeholder="postgresql://postgres:password@192.168.1.100:5432/azadipos" />
+      <p style="text-align:center; color:#64748b; margin: 8px 0;">— or fill manually —</p>
+      <div class="row-3">
+        <div><label>Server IP</label><input type="text" id="tHost" placeholder="192.168.1.100" /></div>
+        <div><label>Port</label><input type="text" id="tPort" value="5432" /></div>
+        <div><label>Database</label><input type="text" id="tDbName" value="azadipos" /></div>
+      </div>
+      <div class="row">
+        <div><label>Username</label><input type="text" id="tUser" value="postgres" /></div>
+        <div><label>Password</label><input type="password" id="tPass" placeholder="Password" /></div>
+      </div>
+      <div id="terminalStatus"></div>
+      <button class="btn btn-primary" onclick="connectTerminal()">Connect & Start POS</button>
+    </div>
+
+    <!-- Launch (shown after successful config) -->
+    <div class="card hidden" id="launchCard">
+      <h2>✅ Ready to Launch</h2>
+      <div id="launchConnString" class="connection-string-box"></div>
+      <div id="launchIPs" class="alert alert-info hidden"></div>
+      <div id="launchStatus"></div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="launchBtn" onclick="launchApp()">🚀 Launch AzadiPOS</button>
+        <button class="btn btn-secondary btn-sm" onclick="resetSetup()">Change Settings</button>
+      </div>
+    </div>
+
+    <div class="footer">
+      <a onclick="openLogs()">View Logs</a>
     </div>
   </div>
 
   <script>
     const { ipcRenderer } = require('electron');
-    
-    let mode = 'server';
-    let connectionValid = false;
-    let isStarting = false;
-    
-    // Listen for startup error from main process
+
+    let selectedMode = null;
+    let pgInstalled = false;
+
+    // Listen for startup errors
     ipcRenderer.on('startup-error', (event, message) => {
-      const errorDiv = document.getElementById('startupError');
-      errorDiv.innerHTML = `<div class="status warning" style="margin-bottom: 16px;">⚠️ ${message}</div>`;
+      document.getElementById('startupError').textContent = message;
+      document.getElementById('startupError').classList.remove('hidden');
     });
-    
-    function showLoading(text) {
-      document.getElementById('loadingText').textContent = text;
-      document.getElementById('loadingOverlay').classList.remove('hidden');
-    }
-    
-    function hideLoading() {
-      document.getElementById('loadingOverlay').classList.add('hidden');
-    }
-    
-    function setMode(newMode) {
-      mode = newMode;
+
+    // Listen for download progress
+    ipcRenderer.on('download-progress', (event, { downloaded, total, percent }) => {
+      const el = document.getElementById('downloadProgress');
+      if (el) el.style.width = percent + '%';
+      const label = document.getElementById('downloadLabel');
+      if (label) label.textContent = `Downloading... ${percent}% (${(downloaded/1024/1024).toFixed(0)}/${(total/1024/1024).toFixed(0)} MB)`;
+    });
+
+    function selectMode(mode) {
+      selectedMode = mode;
       document.getElementById('modeServer').classList.toggle('active', mode === 'server');
       document.getElementById('modeTerminal').classList.toggle('active', mode === 'terminal');
-      document.getElementById('serverConfig').classList.toggle('hidden', mode !== 'server');
-      document.getElementById('terminalConfig').classList.toggle('hidden', mode !== 'terminal');
-      connectionValid = false;
-      document.getElementById('startBtn').disabled = true;
-      document.getElementById('statusDiv').innerHTML = '';
+      document.getElementById('pgSetupCard').classList.toggle('hidden', mode !== 'server');
+      document.getElementById('dbSetupCard').classList.toggle('hidden', mode !== 'server');
+      document.getElementById('terminalCard').classList.toggle('hidden', mode !== 'terminal');
+      document.getElementById('launchCard').classList.add('hidden');
+      if (mode === 'server') checkPostgres();
     }
-    
-    function getConnectionString() {
-      if (mode === 'terminal') {
-        return document.getElementById('connectionString').value.trim();
-      }
-      const host = document.getElementById('host').value.trim();
-      const port = document.getElementById('port').value.trim();
-      const username = document.getElementById('username').value.trim();
-      const password = document.getElementById('password').value;
-      const dbName = document.getElementById('dbName').value.trim();
-      return `postgresql://${username}:${encodeURIComponent(password)}@${host}:${port}/${dbName}`;
-    }
-    
-    async function testConnection() {
-      const btn = document.getElementById('testBtn');
-      const status = document.getElementById('statusDiv');
+
+    async function checkPostgres() {
+      const statusEl = document.getElementById('pgStatus');
+      const actionsEl = document.getElementById('pgActions');
+      statusEl.innerHTML = '<span class="spinner"></span> Checking PostgreSQL...';
+      actionsEl.innerHTML = '';
       
-      const connStr = getConnectionString();
-      if (!connStr || connStr === 'postgresql://:@:/') {
-        status.innerHTML = '<div class="status error">Please fill in all connection fields</div>';
-        return;
-      }
+      const result = await ipcRenderer.invoke('check-postgres');
       
-      btn.innerHTML = '<span class="loading"></span>Testing...';
-      btn.disabled = true;
-      
-      const result = await ipcRenderer.invoke('test-connection', connStr);
-      
-      if (result.success) {
-        status.innerHTML = '<div class="status success">✓ Connected successfully!</div>';
-        connectionValid = true;
-        document.getElementById('startBtn').disabled = false;
-        // Clear any startup error
-        document.getElementById('startupError').innerHTML = '';
+      if (result.installed) {
+        pgInstalled = true;
+        statusEl.innerHTML = `<div class="alert alert-success"><span class="status-dot green"></span>PostgreSQL v${result.version} is installed</div>`;
+        actionsEl.innerHTML = '';
+        document.getElementById('pgBadge').classList.add('done');
       } else {
-        status.innerHTML = `<div class="status error">✗ Connection failed: ${result.error}</div>`;
-        connectionValid = false;
-        document.getElementById('startBtn').disabled = true;
+        pgInstalled = false;
+        statusEl.innerHTML = '<div class="alert alert-warning"><span class="status-dot yellow"></span>PostgreSQL is not installed on this computer</div>';
+        actionsEl.innerHTML = `
+          <p style="font-size:0.85rem; color:#94a3b8; margin-bottom:12px;">PostgreSQL is required for the server. Click below to download and install it automatically.</p>
+          <label>Set PostgreSQL Password</label>
+          <input type="password" id="pgPassword" placeholder="Choose a strong password" />
+          <label>Confirm Password</label>
+          <input type="password" id="pgPasswordConfirm" placeholder="Confirm password" />
+          <button class="btn btn-primary" onclick="installPostgres()">📥 Download & Install PostgreSQL</button>
+          <div id="pgInstallStatus" style="margin-top:12px;"></div>
+        `;
       }
-      
-      btn.innerHTML = 'Test Connection';
-      btn.disabled = false;
     }
-    
-    async function saveAndStart() {
-      if (isStarting) return;
-      isStarting = true;
+
+    async function installPostgres() {
+      const pw = document.getElementById('pgPassword').value;
+      const pwc = document.getElementById('pgPasswordConfirm').value;
+      if (!pw || pw.length < 4) { alert('Password must be at least 4 characters'); return; }
+      if (pw !== pwc) { alert('Passwords do not match'); return; }
+
+      const statusEl = document.getElementById('pgInstallStatus');
+      statusEl.innerHTML = `
+        <div class="alert alert-info"><span class="spinner"></span> <span id="downloadLabel">Downloading PostgreSQL...</span></div>
+        <div class="progress-bar"><div class="progress-fill" id="downloadProgress" style="width:0%"></div></div>
+      `;
+
+      // Download
+      const dlResult = await ipcRenderer.invoke('download-postgres');
+      if (!dlResult.success) {
+        statusEl.innerHTML = `<div class="alert alert-error">Download failed: ${dlResult.error}</div>`;
+        return;
+      }
+
+      // Install
+      statusEl.innerHTML = '<div class="alert alert-info"><span class="spinner"></span> Installing PostgreSQL... This may take a few minutes and may request admin permission.</div>';
       
-      const status = document.getElementById('statusDiv');
-      const connStr = getConnectionString();
+      const installResult = await ipcRenderer.invoke('install-postgres', pw);
+      if (!installResult.success) {
+        statusEl.innerHTML = `<div class="alert alert-error">Installation failed: ${installResult.error}. You may need to run as Administrator.</div>`;
+        return;
+      }
+
+      statusEl.innerHTML = '<div class="alert alert-success">✅ PostgreSQL installed successfully!</div>';
+      document.getElementById('dbPass').value = pw;
       
-      if (!connStr) {
-        status.innerHTML = '<div class="status error">Please configure connection settings</div>';
-        isStarting = false;
+      // Re-check
+      await checkPostgres();
+    }
+
+    async function testPgConnection() {
+      const statusEl = document.getElementById('dbSetupStatus');
+      const config = {
+        host: document.getElementById('dbHost').value,
+        port: document.getElementById('dbPort').value,
+        username: document.getElementById('dbUser').value,
+        password: document.getElementById('dbPass').value,
+      };
+      if (!config.password) { statusEl.innerHTML = '<div class="alert alert-error">Please enter the PostgreSQL password</div>'; return; }
+      statusEl.innerHTML = '<span class="spinner"></span> Testing connection...';
+      const result = await ipcRenderer.invoke('test-pg-connection', config);
+      if (result.success) {
+        statusEl.innerHTML = '<div class="alert alert-success"><span class="status-dot green"></span>Connection successful!</div>';
+      } else {
+        statusEl.innerHTML = `<div class="alert alert-error">Connection failed: ${result.error}</div>`;
+      }
+    }
+
+    async function setupDatabase() {
+      const statusEl = document.getElementById('dbSetupStatus');
+      const config = {
+        host: document.getElementById('dbHost').value,
+        port: document.getElementById('dbPort').value,
+        username: document.getElementById('dbUser').value,
+        password: document.getElementById('dbPass').value,
+        dbName: document.getElementById('dbName').value,
+      };
+      if (!config.password) { statusEl.innerHTML = '<div class="alert alert-error">Please enter the PostgreSQL password</div>'; return; }
+      statusEl.innerHTML = '<span class="spinner"></span> Setting up database and tables...';
+      
+      const result = await ipcRenderer.invoke('setup-database', config);
+      if (!result.success) {
+        statusEl.innerHTML = `<div class="alert alert-error">Setup failed: ${result.error}</div>`;
         return;
       }
       
-      showLoading('Connecting to database...');
+      statusEl.innerHTML = '<div class="alert alert-success">✅ Database is ready!</div>';
       
-      const config = {
-        mode,
-        databaseUrl: connStr,
-      };
+      // Save config and show launch card
+      await ipcRenderer.invoke('save-config', { databaseUrl: result.connectionString, mode: 'server' });
+      showLaunchCard(result.connectionString, true);
+    }
+
+    async function connectTerminal() {
+      const statusEl = document.getElementById('terminalStatus');
+      let connString = document.getElementById('connString').value.trim();
       
-      // Save config first
-      await ipcRenderer.invoke('save-config', config);
+      if (!connString) {
+        const h = document.getElementById('tHost').value;
+        const p = document.getElementById('tPort').value;
+        const u = document.getElementById('tUser').value;
+        const pw = document.getElementById('tPass').value;
+        const db = document.getElementById('tDbName').value;
+        if (!h || !pw) { statusEl.innerHTML = '<div class="alert alert-error">Please fill in the server IP and password</div>'; return; }
+        connString = `postgresql://${u}:${encodeURIComponent(pw)}@${h}:${p}/${db}`;
+      }
       
-      showLoading('Starting server...');
-      
-      // Try to start the app
-      const result = await ipcRenderer.invoke('start-app');
-      
+      statusEl.innerHTML = '<span class="spinner"></span> Testing connection to server...';
+      const result = await ipcRenderer.invoke('test-connection', connString);
       if (!result.success) {
-        hideLoading();
-        status.innerHTML = `<div class="status error">✗ Failed to start: ${result.error}</div>`;
-        isStarting = false;
+        statusEl.innerHTML = `<div class="alert alert-error">Cannot connect: ${result.error}</div>`;
+        return;
       }
-      // If successful, the window will be replaced by the main app window
+      statusEl.innerHTML = '<div class="alert alert-success">✅ Connected to server!</div>';
+      await ipcRenderer.invoke('save-config', { databaseUrl: connString, mode: 'terminal' });
+      showLaunchCard(connString, false);
     }
-    
-    async function resetConfig() {
-      if (confirm('Reset saved configuration? You will need to re-enter your database settings.')) {
-        await ipcRenderer.invoke('clear-config');
-        document.getElementById('statusDiv').innerHTML = '<div class="status info">Configuration cleared</div>';
-        document.getElementById('startupError').innerHTML = '';
-        connectionValid = false;
-        document.getElementById('startBtn').disabled = true;
-      }
-    }
-    
-    async function openLogFile() {
-      await ipcRenderer.invoke('open-log-file');
-    }
-    
-    async function cancelConnection() {
-      await ipcRenderer.invoke('abort-connection');
-      hideLoading();
-      isStarting = false;
-      document.getElementById('statusDiv').innerHTML = '<div class="status info">Connection cancelled. You can modify settings and try again.</div>';
-    }
-    
-    // Load saved config on startup
-    async function init() {
-      const config = await ipcRenderer.invoke('load-config');
-      if (config) {
-        if (config.mode === 'terminal') {
-          setMode('terminal');
-          document.getElementById('connectionString').value = config.databaseUrl || '';
-        } else {
-          // Try to parse the URL
-          try {
-            const url = new URL(config.databaseUrl);
-            document.getElementById('host').value = url.hostname;
-            document.getElementById('port').value = url.port || '5432';
-            document.getElementById('username').value = url.username;
-            document.getElementById('password').value = decodeURIComponent(url.password);
-            document.getElementById('dbName').value = url.pathname.slice(1);
-          } catch (e) {
-            console.log('Could not parse saved URL');
-          }
+
+    async function showLaunchCard(connString, isServer) {
+      document.getElementById('launchCard').classList.remove('hidden');
+      // Mask password in display
+      const masked = connString.replace(/:([^@]+)@/, ':****@');
+      document.getElementById('launchConnString').textContent = masked;
+      
+      if (isServer) {
+        const ips = await ipcRenderer.invoke('get-local-ips');
+        if (ips.length > 0) {
+          const ipList = ips.map(ip => `<b>${ip.address}</b> (${ip.name})`).join(', ');
+          const ipEl = document.getElementById('launchIPs');
+          ipEl.innerHTML = `<b>📡 Terminal Connection Info:</b><br>Other terminals on your network can connect using this server's IP:<br>${ipList}<br><br>They should enter this connection string:<br><code>postgresql://postgres:PASSWORD@YOUR_IP:5432/azadipos</code>`;
+          ipEl.classList.remove('hidden');
         }
       }
     }
-    
-    init();
+
+    async function launchApp() {
+      const statusEl = document.getElementById('launchStatus');
+      const btn = document.getElementById('launchBtn');
+      btn.disabled = true;
+      statusEl.innerHTML = '<span class="spinner"></span> Starting AzadiPOS...';
+      const result = await ipcRenderer.invoke('start-app');
+      if (!result.success) {
+        btn.disabled = false;
+        statusEl.innerHTML = `<div class="alert alert-error">${result.error}</div>`;
+      }
+    }
+
+    function resetSetup() {
+      ipcRenderer.invoke('clear-config');
+      document.getElementById('launchCard').classList.add('hidden');
+      document.getElementById('pgSetupCard').classList.add('hidden');
+      document.getElementById('dbSetupCard').classList.add('hidden');
+      document.getElementById('terminalCard').classList.add('hidden');
+      document.getElementById('modeServer').classList.remove('active');
+      document.getElementById('modeTerminal').classList.remove('active');
+      selectedMode = null;
+    }
+
+    function openLogs() { ipcRenderer.invoke('open-log-file'); }
+
+    // Auto-load existing config
+    (async () => {
+      const config = await ipcRenderer.invoke('load-config');
+      if (config && config.databaseUrl) {
+        if (config.mode === 'server') {
+          selectMode('server');
+          // Pre-fill from connection string
+          try {
+            const url = new URL(config.databaseUrl);
+            document.getElementById('dbHost').value = url.hostname;
+            document.getElementById('dbPort').value = url.port || '5432';
+            document.getElementById('dbUser').value = url.username;
+            document.getElementById('dbPass').value = decodeURIComponent(url.password);
+            document.getElementById('dbName').value = url.pathname.slice(1);
+          } catch(e) {}
+          showLaunchCard(config.databaseUrl, true);
+        } else {
+          selectMode('terminal');
+          document.getElementById('connString').value = config.databaseUrl;
+          showLaunchCard(config.databaseUrl, false);
+        }
+      }
+    })();
   </script>
 </body>
 </html>

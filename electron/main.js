@@ -1,8 +1,10 @@
 const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, exec } = require('child_process');
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
+const os = require('os');
 const { Client } = require('pg');
 const crypto = require('crypto');
 
@@ -16,6 +18,9 @@ let serverProcess = null;
 let serverStarted = false;
 let currentConfig = null;
 let connectionAborted = false;
+
+// PostgreSQL installer URL
+const POSTGRES_DOWNLOAD_URL = 'https://get.enterprisedb.com/postgresql/postgresql-16.4-1-windows-x64.exe';
 
 // ==================== FILE PATHS ====================
 
@@ -35,6 +40,13 @@ function getTerminalIdPath() {
   return path.join(app.getPath('userData'), 'terminal-id.txt');
 }
 
+function getSchemaPath() {
+  if (isDev) {
+    return path.join(__dirname, '..', 'server-setup', 'schema.sql');
+  }
+  return path.join(process.resourcesPath, 'schema.sql');
+}
+
 // ==================== LOGGING ====================
 
 function log(message) {
@@ -47,11 +59,9 @@ function log(message) {
 }
 
 // ==================== TERMINAL ID ====================
-// Each terminal gets a unique 4-character ID to prevent transaction number conflicts
 
 function generateTerminalId() {
-  // Generate a 4-character alphanumeric ID
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Removed similar-looking chars
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let id = '';
   for (let i = 0; i < 4; i++) {
     id += chars.charAt(Math.floor(Math.random() * chars.length));
@@ -72,8 +82,6 @@ function getOrCreateTerminalId() {
   } catch (e) {
     log(`Error reading terminal ID: ${e.message}`);
   }
-  
-  // Generate new terminal ID
   const newId = generateTerminalId();
   try {
     fs.writeFileSync(terminalIdPath, newId);
@@ -85,7 +93,6 @@ function getOrCreateTerminalId() {
 }
 
 // ==================== OFFLINE QUEUE STORAGE ====================
-// Persistent storage for offline transactions (survives cache clears)
 
 function loadOfflineQueue() {
   try {
@@ -172,6 +179,129 @@ function clearConfig() {
   }
 }
 
+// ==================== POSTGRESQL DETECTION & INSTALLATION ====================
+
+function checkPostgresInstalled() {
+  return new Promise((resolve) => {
+    const commonPaths = [
+      'C:\\Program Files\\PostgreSQL',
+      'C:\\Program Files (x86)\\PostgreSQL',
+    ];
+    for (const basePath of commonPaths) {
+      if (fs.existsSync(basePath)) {
+        try {
+          const versions = fs.readdirSync(basePath).filter(f => /^\d+$/.test(f));
+          if (versions.length > 0) {
+            const latestVersion = versions.sort((a, b) => parseInt(b) - parseInt(a))[0];
+            const binPath = path.join(basePath, latestVersion, 'bin');
+            if (fs.existsSync(path.join(binPath, 'psql.exe'))) {
+              resolve({ installed: true, path: binPath, version: latestVersion });
+              return;
+            }
+          }
+        } catch (e) {}
+      }
+    }
+    exec('where psql', (error, stdout) => {
+      if (!error && stdout.trim()) {
+        resolve({ installed: true, path: path.dirname(stdout.trim().split('\n')[0]), version: 'unknown' });
+      } else {
+        resolve({ installed: false });
+      }
+    });
+  });
+}
+
+function downloadFile(url, dest, onProgress) {
+  return new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(dest);
+    const request = https.get(url, (response) => {
+      if (response.statusCode === 301 || response.statusCode === 302) {
+        file.close();
+        try { fs.unlinkSync(dest); } catch (e) {}
+        downloadFile(response.headers.location, dest, onProgress)
+          .then(resolve).catch(reject);
+        return;
+      }
+      if (response.statusCode !== 200) {
+        reject(new Error(`Download failed with status ${response.statusCode}`));
+        return;
+      }
+      const totalSize = parseInt(response.headers['content-length'], 10);
+      let downloadedSize = 0;
+      response.on('data', (chunk) => {
+        downloadedSize += chunk.length;
+        if (onProgress && totalSize) onProgress(downloadedSize, totalSize);
+      });
+      response.pipe(file);
+      file.on('finish', () => { file.close(); resolve(dest); });
+    });
+    request.on('error', (err) => { fs.unlink(dest, () => {}); reject(err); });
+    file.on('error', (err) => { fs.unlink(dest, () => {}); reject(err); });
+  });
+}
+
+function runPostgresInstaller(installerPath, password) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      '--mode', 'unattended',
+      '--unattendedmodeui', 'minimal',
+      '--superpassword', password,
+      '--servicename', 'postgresql',
+      '--servicepassword', password,
+      '--serverport', '5432',
+      '--enable-components', 'server,commandlinetools',
+      '--disable-components', 'pgAdmin,stackbuilder',
+    ];
+    const installer = spawn(installerPath, args, { stdio: 'ignore', detached: false });
+    installer.on('error', (error) => reject(new Error(`Failed to run installer: ${error.message}`)));
+    installer.on('close', (code) => {
+      if (code === 0) resolve({ success: true });
+      else reject(new Error(`Installer exited with code ${code}`));
+    });
+  });
+}
+
+async function createDatabaseAndTables(host, port, username, password, dbName) {
+  log(`Creating database '${dbName}' on ${host}:${port}...`);
+  
+  // Connect to 'postgres' to create the database
+  const adminClient = new Client({ host, port: parseInt(port), user: username, password, database: 'postgres', connectionTimeoutMillis: 5000 });
+  try {
+    await adminClient.connect();
+    const result = await adminClient.query("SELECT 1 FROM pg_database WHERE datname = $1", [dbName]);
+    if (result.rows.length === 0) {
+      await adminClient.query(`CREATE DATABASE "${dbName}"`);
+      log(`Database '${dbName}' created`);
+    } else {
+      log(`Database '${dbName}' already exists`);
+    }
+    await adminClient.end();
+  } catch (error) {
+    try { await adminClient.end(); } catch (e) {}
+    throw error;
+  }
+  
+  // Connect to the new database to create tables
+  const dbClient = new Client({ host, port: parseInt(port), user: username, password, database: dbName, connectionTimeoutMillis: 5000 });
+  try {
+    await dbClient.connect();
+    const schemaPath = getSchemaPath();
+    if (fs.existsSync(schemaPath)) {
+      const sql = fs.readFileSync(schemaPath, 'utf8');
+      await dbClient.query(sql);
+      log('Database tables created/verified');
+    } else {
+      log(`WARNING: schema.sql not found at ${schemaPath}`);
+    }
+    await dbClient.end();
+    return { success: true };
+  } catch (error) {
+    try { await dbClient.end(); } catch (e) {}
+    throw error;
+  }
+}
+
 // ==================== SERVER MANAGEMENT ====================
 
 function getStandalonePath() {
@@ -195,33 +325,22 @@ function checkServer(url) {
 async function waitForServer(url, timeoutMs = 90000) {
   const startTime = Date.now();
   log(`Waiting for server at ${url}...`);
-  
   while (Date.now() - startTime < timeoutMs) {
     const isUp = await checkServer(url);
-    if (isUp) {
-      log('Server is responding!');
-      return true;
-    }
+    if (isUp) { log('Server is responding!'); return true; }
     await new Promise(r => setTimeout(r, 1000));
   }
-  
   log('Server wait timeout exceeded');
   return false;
 }
 
 async function testDatabaseConnection(connectionString, timeoutMs = 5000) {
   log(`Testing database connection...`);
-  
   const timeoutPromise = new Promise((_, reject) => {
     setTimeout(() => reject(new Error('Connection timed out after 5 seconds')), timeoutMs);
   });
-  
   const connectionPromise = (async () => {
-    const client = new Client({ 
-      connectionString, 
-      connectionTimeoutMillis: timeoutMs,
-      query_timeout: timeoutMs,
-    });
+    const client = new Client({ connectionString, connectionTimeoutMillis: timeoutMs, query_timeout: timeoutMs });
     try {
       await client.connect();
       await client.query('SELECT 1');
@@ -234,7 +353,6 @@ async function testDatabaseConnection(connectionString, timeoutMs = 5000) {
       return { success: false, error: error.message };
     }
   })();
-  
   try {
     return await Promise.race([connectionPromise, timeoutPromise]);
   } catch (error) {
@@ -244,31 +362,24 @@ async function testDatabaseConnection(connectionString, timeoutMs = 5000) {
 }
 
 function getNodePath() {
-  if (isDev) {
-    return 'node';
-  }
+  if (isDev) return 'node';
   return process.execPath;
 }
 
 function startServer(databaseUrl) {
   const standalonePath = getStandalonePath();
   const serverJs = path.join(standalonePath, 'server.js');
-  
   log(`Standalone path: ${standalonePath}`);
   log(`Server.js path: ${serverJs}`);
-  
   if (!fs.existsSync(standalonePath)) {
     log(`ERROR: Standalone directory not found: ${standalonePath}`);
     return { process: null, error: `Standalone directory not found: ${standalonePath}` };
   }
-  
   if (!fs.existsSync(serverJs)) {
     log(`ERROR: server.js not found at: ${serverJs}`);
     return { process: null, error: `server.js not found` };
   }
-  
   log('Starting Next.js server...');
-  
   const env = {
     ...process.env,
     PORT: '3000',
@@ -279,17 +390,14 @@ function startServer(databaseUrl) {
     NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET || 'azadipos-desktop-secret-key-change-in-production',
     ELECTRON_RUN_AS_NODE: '1',
   };
-  
   const nodePath = getNodePath();
   log(`Using Node.js at: ${nodePath}`);
-  
   try {
     const proc = spawn(nodePath, [serverJs], {
       cwd: standalonePath,
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
-    
     proc.stdout.on('data', (data) => log(`[Server] ${data.toString().trim()}`));
     proc.stderr.on('data', (data) => log(`[Server Error] ${data.toString().trim()}`));
     proc.on('error', (error) => log(`[Server Process Error] ${error.message}`));
@@ -298,7 +406,6 @@ function startServer(databaseUrl) {
       serverProcess = null;
       serverStarted = false;
     });
-    
     return { process: proc, error: null };
   } catch (error) {
     log(`Failed to spawn server: ${error.message}`);
@@ -316,29 +423,13 @@ function updateSplashStatus(status, isError = false) {
 
 function createSplashWindow() {
   splashWindow = new BrowserWindow({
-    width: 450,
-    height: 350,
-    frame: false,
-    transparent: false,
-    resizable: false,
-    webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
-    },
-    backgroundColor: '#1a1a2e',
-    show: false,
+    width: 450, height: 350, frame: false, transparent: false, resizable: false,
+    webPreferences: { nodeIntegration: true, contextIsolation: false },
+    backgroundColor: '#1a1a2e', show: false,
   });
-  
   splashWindow.loadFile(path.join(__dirname, 'splash.html'));
-  
-  splashWindow.once('ready-to-show', () => {
-    splashWindow.show();
-  });
-  
-  splashWindow.on('closed', () => {
-    splashWindow = null;
-  });
-  
+  splashWindow.once('ready-to-show', () => splashWindow.show());
+  splashWindow.on('closed', () => { splashWindow = null; });
   return splashWindow;
 }
 
@@ -347,36 +438,21 @@ function createConfigWindow(errorMessage = null) {
     splashWindow.close();
     splashWindow = null;
   }
-  
   mainWindow = new BrowserWindow({
-    width: 650,
-    height: 600,
-    webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
-    },
-    autoHideMenuBar: true,
-    title: 'AzadiPOS - Configuration',
-    resizable: true,
-    show: false,
+    width: 850, height: 750,
+    webPreferences: { nodeIntegration: true, contextIsolation: false },
+    autoHideMenuBar: true, title: 'AzadiPOS - Setup', resizable: true, show: false,
   });
-  
   mainWindow.loadFile(path.join(__dirname, 'config.html'));
-  
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
     if (errorMessage) {
-      setTimeout(() => {
-        mainWindow.webContents.send('startup-error', errorMessage);
-      }, 100);
+      setTimeout(() => mainWindow.webContents.send('startup-error', errorMessage), 100);
     }
   });
-  
   mainWindow.on('closed', () => {
     mainWindow = null;
-    if (!serverStarted) {
-      app.quit();
-    }
+    if (!serverStarted) app.quit();
   });
 }
 
@@ -385,29 +461,17 @@ function createMainWindow() {
     splashWindow.close();
     splashWindow = null;
   }
-  
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width: 1280, height: 800,
     webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
+      nodeIntegration: false, contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
     },
-    autoHideMenuBar: true,
-    title: 'AzadiPOS',
-    show: false,
+    autoHideMenuBar: true, title: 'AzadiPOS', show: false,
   });
-  
   mainWindow.loadURL('http://127.0.0.1:3000');
-  
-  mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
-  });
-  
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-  });
+  mainWindow.once('ready-to-show', () => mainWindow.show());
+  mainWindow.on('closed', () => { mainWindow = null; });
 }
 
 // ==================== IPC HANDLERS ====================
@@ -419,15 +483,11 @@ ipcMain.handle('test-connection', async (event, connectionString) => {
 
 ipcMain.handle('save-config', async (event, config) => {
   const success = saveConfig(config);
-  if (success) {
-    currentConfig = config;
-  }
+  if (success) currentConfig = config;
   return { success };
 });
 
-ipcMain.handle('load-config', async () => {
-  return loadConfig();
-});
+ipcMain.handle('load-config', async () => loadConfig());
 
 ipcMain.handle('clear-config', async () => {
   clearConfig();
@@ -437,110 +497,141 @@ ipcMain.handle('clear-config', async () => {
 
 ipcMain.handle('open-log-file', async () => {
   const logPath = getLogPath();
-  if (fs.existsSync(logPath)) {
-    shell.openPath(logPath);
-    return { success: true };
-  }
+  if (fs.existsSync(logPath)) { shell.openPath(logPath); return { success: true }; }
   return { success: false, error: 'Log file not found' };
 });
 
 ipcMain.handle('abort-connection', async () => {
   log('Connection abort requested');
   connectionAborted = true;
-  if (serverProcess) {
-    serverProcess.kill();
-    serverProcess = null;
-  }
+  if (serverProcess) { serverProcess.kill(); serverProcess = null; }
   return { success: true };
+});
+
+// PostgreSQL setup handlers
+ipcMain.handle('check-postgres', async () => {
+  return await checkPostgresInstalled();
+});
+
+ipcMain.handle('download-postgres', async (event) => {
+  const dest = path.join(app.getPath('downloads'), 'postgresql-installer.exe');
+  try {
+    await downloadFile(POSTGRES_DOWNLOAD_URL, dest, (downloaded, total) => {
+      const percent = Math.round((downloaded / total) * 100);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('download-progress', { downloaded, total, percent });
+      }
+    });
+    return { success: true, path: dest };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('install-postgres', async (event, password) => {
+  const installerPath = path.join(app.getPath('downloads'), 'postgresql-installer.exe');
+  if (!fs.existsSync(installerPath)) {
+    return { success: false, error: 'Installer not found. Please download first.' };
+  }
+  try {
+    await runPostgresInstaller(installerPath, password);
+    try { fs.unlinkSync(installerPath); } catch (e) {}
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('get-local-ips', async () => {
+  const interfaces = os.networkInterfaces();
+  const ips = [];
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        ips.push({ name, address: iface.address });
+      }
+    }
+  }
+  return ips;
+});
+
+ipcMain.handle('test-pg-connection', async (event, config) => {
+  const { host, port, username, password } = config;
+  const client = new Client({ host, port: parseInt(port), user: username, password, database: 'postgres', connectionTimeoutMillis: 5000 });
+  try {
+    await client.connect();
+    await client.end();
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('setup-database', async (event, config) => {
+  const { host, port, username, password, dbName } = config;
+  try {
+    const result = await createDatabaseAndTables(host, port, username, password, dbName);
+    // Build connection string
+    const connectionString = `postgresql://${username}:${encodeURIComponent(password)}@${host}:${port}/${dbName}`;
+    return { success: true, connectionString };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
 });
 
 ipcMain.handle('start-app', async () => {
   log('start-app IPC called');
   connectionAborted = false;
-  
   if (!currentConfig || !currentConfig.databaseUrl) {
     log('No configuration found');
     return { success: false, error: 'No configuration found. Please configure database settings.' };
   }
-  
   log('Testing database connection before starting...');
   const dbTest = await testDatabaseConnection(currentConfig.databaseUrl);
-  
   if (connectionAborted) {
     log('Connection aborted by user');
     return { success: false, error: 'Connection cancelled', aborted: true };
   }
-  
   if (!dbTest.success) {
     log(`Database test failed: ${dbTest.error}`);
     return { success: false, error: `Database connection failed: ${dbTest.error}` };
   }
-  
   log('Starting server...');
   const serverResult = startServer(currentConfig.databaseUrl);
-  
   if (connectionAborted) {
     if (serverResult.process) serverResult.process.kill();
     return { success: false, error: 'Connection cancelled', aborted: true };
   }
-  
   if (!serverResult.process) {
     log(`Server failed to start: ${serverResult.error}`);
     return { success: false, error: `Failed to start server: ${serverResult.error}` };
   }
-  
   serverProcess = serverResult.process;
-  
   log('Waiting for server to be ready...');
   const serverReady = await waitForServer('http://127.0.0.1:3000', 60000);
-  
   if (connectionAborted) {
     if (serverProcess) { serverProcess.kill(); serverProcess = null; }
     return { success: false, error: 'Connection cancelled', aborted: true };
   }
-  
   if (!serverReady) {
     log('Server failed to become ready');
-    if (serverProcess) {
-      serverProcess.kill();
-      serverProcess = null;
-    }
+    if (serverProcess) { serverProcess.kill(); serverProcess = null; }
     return { success: false, error: 'Server failed to start within 60 seconds. Check your database connection and try again.' };
   }
-  
   log('Server is ready, opening main window');
   serverStarted = true;
-  
-  if (mainWindow) {
-    mainWindow.close();
-  }
-  
+  if (mainWindow) mainWindow.close();
   createMainWindow();
   return { success: true };
 });
 
 // ==================== OFFLINE QUEUE IPC HANDLERS ====================
 
-ipcMain.handle('get-terminal-id', async () => {
-  return getOrCreateTerminalId();
-});
-
-ipcMain.handle('get-offline-queue', async () => {
-  return loadOfflineQueue();
-});
-
-ipcMain.handle('add-offline-transaction', async (event, transaction) => {
-  return addToOfflineQueue(transaction);
-});
-
-ipcMain.handle('remove-offline-transactions', async (event, localIds) => {
-  return removeFromOfflineQueue(localIds);
-});
-
-ipcMain.handle('get-next-offline-counter', async (event, companyId) => {
-  return getNextOfflineCounter(companyId);
-});
-
+ipcMain.handle('get-terminal-id', async () => getOrCreateTerminalId());
+ipcMain.handle('get-offline-queue', async () => loadOfflineQueue());
+ipcMain.handle('add-offline-transaction', async (event, transaction) => addToOfflineQueue(transaction));
+ipcMain.handle('remove-offline-transactions', async (event, localIds) => removeFromOfflineQueue(localIds));
+ipcMain.handle('get-next-offline-counter', async (event, companyId) => getNextOfflineCounter(companyId));
 ipcMain.handle('clear-offline-queue', async () => {
   saveOfflineQueue({ transactions: [], counter: 0 });
   log('Offline queue cleared');
@@ -552,22 +643,16 @@ ipcMain.handle('clear-offline-queue', async () => {
 async function attemptAutoStart() {
   log('Attempting auto-start with saved configuration...');
   connectionAborted = false;
-  
   updateSplashStatus('Checking saved configuration...');
   await new Promise(r => setTimeout(r, 300));
-  
   currentConfig = loadConfig();
-  
   if (!currentConfig || !currentConfig.databaseUrl) {
     log('No saved configuration found');
     createConfigWindow();
     return;
   }
-  
   updateSplashStatus('Testing database connection...');
-  
   const result = await testDatabaseConnection(currentConfig.databaseUrl, 5000);
-  
   if (!result.success) {
     log(`Saved connection failed: ${result.error}`);
     updateSplashStatus('Connection failed...', true);
@@ -575,12 +660,9 @@ async function attemptAutoStart() {
     createConfigWindow(`Previous connection failed: ${result.error}`);
     return;
   }
-  
   updateSplashStatus('Starting POS server...');
   log('Saved connection works, starting server...');
-  
   const serverResult = startServer(currentConfig.databaseUrl);
-  
   if (!serverResult.process) {
     log(`Server failed to start: ${serverResult.error}`);
     updateSplashStatus('Server failed to start...', true);
@@ -588,24 +670,17 @@ async function attemptAutoStart() {
     createConfigWindow(`Failed to start server: ${serverResult.error}`);
     return;
   }
-  
   serverProcess = serverResult.process;
-  
   updateSplashStatus('Waiting for server to be ready...');
   const serverReady = await waitForServer('http://127.0.0.1:3000', 45000);
-  
   if (!serverReady) {
     log('Server failed to start, showing config window');
-    if (serverProcess) {
-      serverProcess.kill();
-      serverProcess = null;
-    }
+    if (serverProcess) { serverProcess.kill(); serverProcess = null; }
     updateSplashStatus('Server timeout...', true);
     await new Promise(r => setTimeout(r, 800));
     createConfigWindow('Server failed to start within 45 seconds. Please check your database connection.');
     return;
   }
-  
   updateSplashStatus('Loading AzadiPOS...');
   serverStarted = true;
   createMainWindow();
@@ -619,7 +694,6 @@ app.whenReady().then(async () => {
   log(`User data path: ${app.getPath('userData')}`);
   log(`Is packaged: ${app.isPackaged}`);
   log(`Terminal ID: ${getOrCreateTerminalId()}`);
-  
   createSplashWindow();
   await new Promise(r => setTimeout(r, 300));
   await attemptAutoStart();
@@ -627,18 +701,11 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   log('All windows closed');
-  if (serverProcess) {
-    log('Killing server process');
-    serverProcess.kill();
-  }
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  if (serverProcess) { log('Killing server process'); serverProcess.kill(); }
+  if (process.platform !== 'darwin') app.quit();
 });
 
 app.on('before-quit', () => {
   log('App quitting');
-  if (serverProcess) {
-    serverProcess.kill();
-  }
+  if (serverProcess) serverProcess.kill();
 });

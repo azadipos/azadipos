@@ -32,6 +32,10 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "server-setup/schema.sql",
+        "to": "schema.sql"
       }
     ],
     "win": {
@@ -57,7 +61,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "artifactName": "Azadi POS Setup.${ext}"
+      "artifactName": "Azadi POS Setup.${ext}",
+      "requestExecutionLevel": "admin"
     },
     "publish": null,
     "portable": {
