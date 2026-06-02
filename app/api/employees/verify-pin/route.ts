@@ -16,7 +16,7 @@ export async function POST(req: Request) {
     }
     
     // Search by barcode first (preferred method), then fallback to legacy PIN
-    let employee = null;
+    let employee: any = null;
     
     if (barcode) {
       employee = await prisma.employee.findFirst({
