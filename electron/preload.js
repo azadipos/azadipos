@@ -26,4 +26,6 @@ contextBridge.exposeInMainWorld('electron', {
   getConfig: () => ipcRenderer.invoke('load-config'),
   // Get local network IPs (so admin can tell terminal operators which IP to use)
   getLocalIps: () => ipcRenderer.invoke('get-local-ips'),
+  // Configure PostgreSQL for LAN access (updates pg_hba.conf and restarts service)
+  configureLanAccess: () => ipcRenderer.invoke('configure-lan-access'),
 });

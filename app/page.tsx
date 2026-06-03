@@ -14,6 +14,7 @@ declare global {
       reconfigure: () => Promise<{ success: boolean }>;
       getConfig: () => Promise<any>;
       getLocalIps: () => Promise<Array<{ name: string; address: string }>>;
+      configureLanAccess: () => Promise<{ success: boolean; error?: string; restartNeeded?: boolean }>;
     };
   }
 }
@@ -37,6 +38,8 @@ export default function HomePage() {
   const [copied, setCopied] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [reconfiguring, setReconfiguring] = useState(false);
+  const [fixingLan, setFixingLan] = useState(false);
+  const [lanStatus, setLanStatus] = useState<string | null>(null);
   
   useEffect(() => {
     setMounted(true);
@@ -94,6 +97,26 @@ export default function HomePage() {
     } catch (err) {
       console.error('Reconfigure failed:', err);
       setReconfiguring(false);
+    }
+  };
+
+  const handleFixLan = async () => {
+    if (!window.electron) return;
+    setFixingLan(true);
+    setLanStatus(null);
+    try {
+      const result = await window.electron.configureLanAccess();
+      if (result.success) {
+        setLanStatus(result.restartNeeded 
+          ? 'LAN access configured! Database service is restarting...' 
+          : 'LAN access is already configured.');
+      } else {
+        setLanStatus(`Failed: ${result.error || 'Unknown error'}. Try running the app as Administrator.`);
+      }
+    } catch (err: any) {
+      setLanStatus(`Error: ${err?.message || 'Unknown error'}. Try running the app as Administrator.`);
+    } finally {
+      setFixingLan(false);
     }
   };
   
@@ -258,6 +281,27 @@ export default function HomePage() {
                     ) : (
                       <p className="text-sm text-red-400">Could not load connection info. Try reconfiguring.</p>
                     )}
+
+                    {/* LAN Access Fix */}
+                    <div className="mt-4 pt-4 border-t border-gray-700">
+                      <p className="text-xs text-gray-500 mb-2">
+                        Terminal can&apos;t connect? This configures the database to accept network connections.
+                      </p>
+                      <Button
+                        variant="outline"
+                        className="w-full border-gray-600 text-gray-300 hover:text-white hover:border-blue-500 bg-transparent"
+                        onClick={handleFixLan}
+                        disabled={fixingLan}
+                      >
+                        <Wifi className={`h-4 w-4 mr-2 ${fixingLan ? 'animate-pulse' : ''}`} />
+                        {fixingLan ? 'Configuring...' : 'Enable LAN Access for Terminals'}
+                      </Button>
+                      {lanStatus && (
+                        <p className={`text-xs mt-2 ${lanStatus.includes('Failed') || lanStatus.includes('Error') ? 'text-red-400' : 'text-green-400'}`}>
+                          {lanStatus}
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </motion.div>
               )}

@@ -263,6 +263,125 @@ function runPostgresInstaller(installerPath, password) {
   });
 }
 
+// ==================== POSTGRESQL LAN CONFIGURATION ====================
+
+function findPostgresDataDir() {
+  // Find the PostgreSQL data directory where pg_hba.conf lives
+  const commonPaths = [
+    'C:\\Program Files\\PostgreSQL',
+    'C:\\Program Files (x86)\\PostgreSQL',
+  ];
+  for (const basePath of commonPaths) {
+    if (fs.existsSync(basePath)) {
+      try {
+        const versions = fs.readdirSync(basePath).filter(f => /^\d+$/.test(f));
+        if (versions.length > 0) {
+          const latestVersion = versions.sort((a, b) => parseInt(b) - parseInt(a))[0];
+          const dataDir = path.join(basePath, latestVersion, 'data');
+          if (fs.existsSync(dataDir)) {
+            return dataDir;
+          }
+        }
+      } catch (e) {
+        log(`Error scanning ${basePath}: ${e.message}`);
+      }
+    }
+  }
+  return null;
+}
+
+function configurePostgresForLAN() {
+  const dataDir = findPostgresDataDir();
+  if (!dataDir) {
+    log('WARNING: Could not find PostgreSQL data directory for LAN configuration');
+    return { success: false, error: 'PostgreSQL data directory not found' };
+  }
+
+  const hbaPath = path.join(dataDir, 'pg_hba.conf');
+  const confPath = path.join(dataDir, 'postgresql.conf');
+  let restartNeeded = false;
+
+  // 1. Update pg_hba.conf to allow LAN connections
+  try {
+    if (fs.existsSync(hbaPath)) {
+      let hba = fs.readFileSync(hbaPath, 'utf8');
+      const lanRule = 'host    all             all             0.0.0.0/0               scram-sha-256';
+      const lanRuleV6 = 'host    all             all             ::/0                    scram-sha-256';
+      // Also accept md5 variant in case older PG version
+      const lanRuleMd5 = 'host    all             all             0.0.0.0/0               md5';
+      
+      if (!hba.includes('0.0.0.0/0')) {
+        log('Adding LAN access rules to pg_hba.conf');
+        hba += '\n\n# Added by AzadiPOS - Allow LAN connections for POS terminals\n';
+        hba += lanRule + '\n';
+        hba += lanRuleV6 + '\n';
+        fs.writeFileSync(hbaPath, hba);
+        restartNeeded = true;
+        log('pg_hba.conf updated for LAN access');
+      } else {
+        log('pg_hba.conf already configured for LAN access');
+      }
+    } else {
+      log(`WARNING: pg_hba.conf not found at ${hbaPath}`);
+    }
+  } catch (e) {
+    log(`Error updating pg_hba.conf: ${e.message}`);
+    return { success: false, error: `Failed to update pg_hba.conf: ${e.message}` };
+  }
+
+  // 2. Update postgresql.conf to listen on all interfaces
+  try {
+    if (fs.existsSync(confPath)) {
+      let conf = fs.readFileSync(confPath, 'utf8');
+      // Check if listen_addresses is already set to '*'
+      if (!conf.match(/^\s*listen_addresses\s*=\s*'\*'/m)) {
+        log('Setting listen_addresses to * in postgresql.conf');
+        // Replace existing listen_addresses line (commented or not)
+        if (conf.match(/^#?\s*listen_addresses\s*=/m)) {
+          conf = conf.replace(/^#?\s*listen_addresses\s*=.*/m, "listen_addresses = '*'");
+        } else {
+          conf += "\n\n# Added by AzadiPOS - Listen on all interfaces for POS terminals\nlisten_addresses = '*'\n";
+        }
+        fs.writeFileSync(confPath, conf);
+        restartNeeded = true;
+        log('postgresql.conf updated: listen_addresses = *');
+      } else {
+        log('postgresql.conf already listening on all interfaces');
+      }
+    } else {
+      log(`WARNING: postgresql.conf not found at ${confPath}`);
+    }
+  } catch (e) {
+    log(`Error updating postgresql.conf: ${e.message}`);
+    return { success: false, error: `Failed to update postgresql.conf: ${e.message}` };
+  }
+
+  // 3. Restart PostgreSQL service if config changed
+  if (restartNeeded) {
+    try {
+      log('Restarting PostgreSQL service to apply LAN config...');
+      exec('net stop postgresql && net start postgresql', { timeout: 30000 }, (error) => {
+        if (error) {
+          // Try alternative service names
+          exec('net stop postgresql-x64-16 && net start postgresql-x64-16', { timeout: 30000 }, (err2) => {
+            if (err2) {
+              log(`PostgreSQL restart warning: ${err2.message}. User may need to restart manually.`);
+            } else {
+              log('PostgreSQL service restarted successfully (x64-16)');
+            }
+          });
+        } else {
+          log('PostgreSQL service restarted successfully');
+        }
+      });
+    } catch (e) {
+      log(`Error restarting PostgreSQL: ${e.message}`);
+    }
+  }
+
+  return { success: true, restartNeeded };
+}
+
 async function createDatabaseAndTables(host, port, username, password, dbName) {
   log(`Creating database '${dbName}' on ${host}:${port}...`);
   
@@ -605,10 +724,21 @@ ipcMain.handle('install-postgres', async (event, password) => {
   try {
     await runPostgresInstaller(installerPath, password);
     try { fs.unlinkSync(installerPath); } catch (e) {}
+    // Auto-configure PostgreSQL for LAN access after fresh install
+    log('Configuring PostgreSQL for LAN access after install...');
+    const lanResult = configurePostgresForLAN();
+    if (!lanResult.success) {
+      log(`LAN config warning: ${lanResult.error}`);
+    }
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
   }
+});
+
+ipcMain.handle('configure-lan-access', async () => {
+  log('Manual LAN configuration requested');
+  return configurePostgresForLAN();
 });
 
 ipcMain.handle('get-local-ips', async () => {
@@ -639,6 +769,14 @@ ipcMain.handle('test-pg-connection', async (event, config) => {
 ipcMain.handle('setup-database', async (event, config) => {
   const { host, port, username, password, dbName } = config;
   try {
+    // If this is a server setup (localhost), configure PostgreSQL for LAN access
+    if (host === 'localhost' || host === '127.0.0.1') {
+      log('Server setup detected, configuring PostgreSQL for LAN access...');
+      const lanResult = configurePostgresForLAN();
+      if (!lanResult.success) {
+        log(`LAN config warning: ${lanResult.error}`);
+      }
+    }
     const result = await createDatabaseAndTables(host, port, username, password, dbName);
     // Build connection string
     const connectionString = `postgresql://${username}:${encodeURIComponent(password)}@${host}:${port}/${dbName}`;
