@@ -59,6 +59,37 @@ jobs:
           New-Item -ItemType Directory -Force -Path ".next/standalone/prisma" | Out-Null
           Copy-Item -Force "prisma/schema.prisma" ".next/standalone/prisma/"
           
+          # CRITICAL: Copy Prisma client + query engine into standalone.
+          # Next.js file tracing often misses the dynamically-loaded engine binary
+          # (.dll.node on Windows), causing "Failed to create company" at runtime.
+          $prismaClientSrc = "node_modules\.prisma"
+          $prismaClientDst = ".next\standalone\node_modules\.prisma"
+          if (Test-Path $prismaClientSrc) {
+            New-Item -ItemType Directory -Force -Path $prismaClientDst | Out-Null
+            Copy-Item -Recurse -Force "$prismaClientSrc\*" $prismaClientDst
+            Write-Host "Prisma client + engine copied to standalone" -ForegroundColor Green
+            
+            # List engine files for verification
+            $engines = Get-ChildItem -Recurse $prismaClientDst -Filter "*.node" -ErrorAction SilentlyContinue
+            if ($engines) {
+              Write-Host "Engine binaries found:" -ForegroundColor Green
+              $engines | ForEach-Object { Write-Host "  $($_.FullName) ($([math]::Round($_.Length/1MB,1)) MB)" }
+            } else {
+              Write-Host "WARNING: No .node engine binaries found in Prisma client!" -ForegroundColor Yellow
+            }
+          } else {
+            Write-Host "WARNING: .prisma directory not found at $prismaClientSrc" -ForegroundColor Yellow
+          }
+          
+          # Also copy @prisma/client if not already traced
+          $atPrismaSrc = "node_modules\@prisma\client"
+          $atPrismaDst = ".next\standalone\node_modules\@prisma\client"
+          if ((Test-Path $atPrismaSrc) -and -not (Test-Path "$atPrismaDst\index.js")) {
+            New-Item -ItemType Directory -Force -Path $atPrismaDst | Out-Null
+            Copy-Item -Recurse -Force "$atPrismaSrc\*" $atPrismaDst
+            Write-Host "@prisma/client copied to standalone" -ForegroundColor Green
+          }
+          
           # Create placeholder .env
           $envContent = "NEXTAUTH_SECRET=$env:AUTH_SECRET`nNEXTAUTH_URL=http://localhost:3000"
           $envContent | Out-File -FilePath ".next/standalone/.env" -Encoding ASCII
