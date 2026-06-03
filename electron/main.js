@@ -644,6 +644,12 @@ ipcMain.handle('start-app', async () => {
     log(`Database test failed: ${dbTest.error}`);
     return { success: false, error: `Database connection failed: ${dbTest.error}` };
   }
+  // Apply schema updates before starting server
+  log('Running schema update...');
+  const schemaResult = await runSchemaUpdate(currentConfig.databaseUrl);
+  if (!schemaResult.success && !schemaResult.skipped) {
+    log(`Schema update warning: ${schemaResult.error}`);
+  }
   log('Starting server...');
   const serverResult = startServer(currentConfig.databaseUrl);
   if (connectionAborted) {
@@ -687,6 +693,45 @@ ipcMain.handle('clear-offline-queue', async () => {
 
 // ==================== APP STARTUP ====================
 
+async function runSchemaUpdate(databaseUrl) {
+  // Run schema.sql on every startup to apply any new columns/tables.
+  // All statements use IF NOT EXISTS / ADD COLUMN IF NOT EXISTS so this is safe.
+  const schemaPath = getSchemaPath();
+  if (!fs.existsSync(schemaPath)) {
+    log(`Schema file not found at ${schemaPath}, skipping schema update`);
+    return { success: true, skipped: true };
+  }
+  log('Running schema update (idempotent)...');
+  // Parse the DATABASE_URL to get connection params
+  let url;
+  try {
+    url = new URL(databaseUrl);
+  } catch (e) {
+    log(`Failed to parse DATABASE_URL: ${e.message}`);
+    return { success: false, error: e.message };
+  }
+  const dbClient = new Client({
+    host: url.hostname,
+    port: parseInt(url.port) || 5432,
+    user: decodeURIComponent(url.username),
+    password: decodeURIComponent(url.password),
+    database: url.pathname.replace(/^\//, ''),
+    connectionTimeoutMillis: 10000,
+  });
+  try {
+    await dbClient.connect();
+    const sql = fs.readFileSync(schemaPath, 'utf8');
+    await dbClient.query(sql);
+    await dbClient.end();
+    log('Schema update completed successfully');
+    return { success: true };
+  } catch (error) {
+    log(`Schema update error: ${error.message}`);
+    try { await dbClient.end(); } catch (e) {}
+    return { success: false, error: error.message };
+  }
+}
+
 async function attemptAutoStart() {
   log('Attempting auto-start with saved configuration...');
   connectionAborted = false;
@@ -706,6 +751,14 @@ async function attemptAutoStart() {
     await new Promise(r => setTimeout(r, 800));
     createConfigWindow(`Previous connection failed: ${result.error}`);
     return;
+  }
+  // Apply any schema updates before starting the server
+  updateSplashStatus('Updating database schema...');
+  const schemaResult = await runSchemaUpdate(currentConfig.databaseUrl);
+  if (!schemaResult.success && !schemaResult.skipped) {
+    log(`Schema update failed: ${schemaResult.error}`);
+    // Non-fatal: log the error but still try to start (the old schema might work)
+    log('Continuing despite schema update failure...');
   }
   updateSplashStatus('Starting POS server...');
   log('Saved connection works, starting server...');
