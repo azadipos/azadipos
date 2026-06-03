@@ -13,6 +13,7 @@ Menu.setApplicationMenu(null);
 
 const isDev = !app.isPackaged;
 let mainWindow = null;
+let configWindow = null;  // SEPARATE variable for config window
 let splashWindow = null;
 let serverProcess = null;
 let serverStarted = false;
@@ -383,7 +384,7 @@ function startServer(databaseUrl) {
   const env = {
     ...process.env,
     PORT: '3000',
-    HOSTNAME: '127.0.0.1',
+    HOSTNAME: '0.0.0.0',
     NODE_ENV: 'production',
     DATABASE_URL: databaseUrl,
     NEXTAUTH_URL: 'http://127.0.0.1:3000',
@@ -421,6 +422,13 @@ function updateSplashStatus(status, isError = false) {
   }
 }
 
+function closeSplash() {
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.close();
+    splashWindow = null;
+  }
+}
+
 function createSplashWindow() {
   splashWindow = new BrowserWindow({
     width: 450, height: 350, frame: false, transparent: false, resizable: false,
@@ -428,40 +436,58 @@ function createSplashWindow() {
     backgroundColor: '#1a1a2e', show: false,
   });
   splashWindow.loadFile(path.join(__dirname, 'splash.html'));
-  splashWindow.once('ready-to-show', () => splashWindow.show());
+  splashWindow.once('ready-to-show', () => {
+    if (splashWindow && !splashWindow.isDestroyed()) splashWindow.show();
+  });
   splashWindow.on('closed', () => { splashWindow = null; });
   return splashWindow;
 }
 
 function createConfigWindow(errorMessage = null) {
-  if (splashWindow && !splashWindow.isDestroyed()) {
-    splashWindow.close();
-    splashWindow = null;
+  closeSplash();
+  
+  // Close existing config window if any
+  if (configWindow && !configWindow.isDestroyed()) {
+    configWindow.close();
+    configWindow = null;
   }
-  mainWindow = new BrowserWindow({
+  
+  configWindow = new BrowserWindow({
     width: 850, height: 750,
     webPreferences: { nodeIntegration: true, contextIsolation: false },
     autoHideMenuBar: true, title: 'AzadiPOS - Setup', resizable: true, show: false,
   });
-  mainWindow.loadFile(path.join(__dirname, 'config.html'));
-  mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
-    if (errorMessage) {
-      setTimeout(() => mainWindow.webContents.send('startup-error', errorMessage), 100);
+  configWindow.loadFile(path.join(__dirname, 'config.html'));
+  configWindow.once('ready-to-show', () => {
+    if (configWindow && !configWindow.isDestroyed()) {
+      configWindow.show();
+      if (errorMessage) {
+        setTimeout(() => {
+          if (configWindow && !configWindow.isDestroyed()) {
+            configWindow.webContents.send('startup-error', errorMessage);
+          }
+        }, 100);
+      }
     }
   });
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-    if (!serverStarted) app.quit();
+  configWindow.on('closed', () => {
+    configWindow = null;
+    // Only quit if no main window and server not started
+    if (!mainWindow && !serverStarted) app.quit();
   });
 }
 
 function createMainWindow() {
-  if (splashWindow && !splashWindow.isDestroyed()) {
-    splashWindow.close();
-    splashWindow = null;
+  closeSplash();
+  
+  // Close config window first and wait for it
+  if (configWindow && !configWindow.isDestroyed()) {
+    configWindow.close();
+    configWindow = null;
   }
-  mainWindow = new BrowserWindow({
+  
+  // Create the main POS window
+  const win = new BrowserWindow({
     width: 1280, height: 800,
     webPreferences: {
       nodeIntegration: false, contextIsolation: true,
@@ -469,12 +495,33 @@ function createMainWindow() {
     },
     autoHideMenuBar: true, title: 'AzadiPOS', show: false,
   });
-  mainWindow.loadURL('http://127.0.0.1:3000');
-  mainWindow.once('ready-to-show', () => mainWindow.show());
-  mainWindow.on('closed', () => { mainWindow = null; });
+  
+  // Assign to mainWindow BEFORE loading URL
+  mainWindow = win;
+  
+  win.loadURL('http://127.0.0.1:3000');
+  win.once('ready-to-show', () => {
+    // Use the local 'win' reference, NOT mainWindow — avoids race condition
+    if (win && !win.isDestroyed()) {
+      win.show();
+    }
+  });
+  win.on('closed', () => {
+    // Only null out if this is still the current mainWindow
+    if (mainWindow === win) {
+      mainWindow = null;
+    }
+  });
 }
 
 // ==================== IPC HANDLERS ====================
+
+// Helper to get the active IPC target window (config or main)
+function getActiveWindow() {
+  if (configWindow && !configWindow.isDestroyed()) return configWindow;
+  if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;
+  return null;
+}
 
 // Config handlers
 ipcMain.handle('test-connection', async (event, connectionString) => {
@@ -518,8 +565,9 @@ ipcMain.handle('download-postgres', async (event) => {
   try {
     await downloadFile(POSTGRES_DOWNLOAD_URL, dest, (downloaded, total) => {
       const percent = Math.round((downloaded / total) * 100);
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('download-progress', { downloaded, total, percent });
+      const win = getActiveWindow();
+      if (win) {
+        win.webContents.send('download-progress', { downloaded, total, percent });
       }
     });
     return { success: true, path: dest };
@@ -620,7 +668,6 @@ ipcMain.handle('start-app', async () => {
   }
   log('Server is ready, opening main window');
   serverStarted = true;
-  if (mainWindow) mainWindow.close();
   createMainWindow();
   return { success: true };
 });
