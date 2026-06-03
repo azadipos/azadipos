@@ -61,8 +61,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "artifactName": "Azadi POS Setup.${ext}",
-      "requestExecutionLevel": "admin"
+      "artifactName": "Azadi POS Setup.${ext}"
     },
     "publish": null,
     "portable": {
