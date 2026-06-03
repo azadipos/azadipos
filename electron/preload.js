@@ -16,8 +16,14 @@ contextBridge.exposeInMainWorld('electronStore', {
   isElectron: true,
 });
 
-// Also expose basic electron info
+// Also expose basic electron info and admin tools
 contextBridge.exposeInMainWorld('electron', {
   ping: () => 'pong',
   isElectron: true,
+  // Allow the app to trigger a reconfiguration (clears saved config and shows setup wizard)
+  reconfigure: () => ipcRenderer.invoke('reconfigure'),
+  // Get saved connection config (for displaying server info to help terminal setup)
+  getConfig: () => ipcRenderer.invoke('load-config'),
+  // Get local network IPs (so admin can tell terminal operators which IP to use)
+  getLocalIps: () => ipcRenderer.invoke('get-local-ips'),
 });

@@ -548,6 +548,27 @@ ipcMain.handle('open-log-file', async () => {
   return { success: false, error: 'Log file not found' };
 });
 
+ipcMain.handle('reconfigure', async () => {
+  log('Reconfigure requested from app UI');
+  // Stop the running server
+  if (serverProcess) {
+    log('Killing server process for reconfiguration');
+    serverProcess.kill();
+    serverProcess = null;
+    serverStarted = false;
+  }
+  // Clear saved config
+  clearConfig();
+  currentConfig = null;
+  // Close main window and show config wizard
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.close();
+    mainWindow = null;
+  }
+  createConfigWindow();
+  return { success: true };
+});
+
 ipcMain.handle('abort-connection', async () => {
   log('Connection abort requested');
   connectionAborted = true;
