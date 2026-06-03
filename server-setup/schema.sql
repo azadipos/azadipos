@@ -1,5 +1,6 @@
 -- AzadiPOS Database Schema
--- Safe version: Creates tables only if they don't exist (preserves data)
+-- Auto-generated from Prisma schema - keeps in sync with the application
+-- Safe version: Uses IF NOT EXISTS and ALTER TABLE ADD COLUMN IF NOT EXISTS
 
 -- Company
 CREATE TABLE IF NOT EXISTS "Company" (
@@ -7,8 +8,19 @@ CREATE TABLE IF NOT EXISTS "Company" (
     "name" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "defaultReturnPeriodDays" INTEGER NOT NULL DEFAULT 30,
+    "logoUrl" TEXT,
+    "address" TEXT,
+    "phone" TEXT,
+    "receiptHeader" TEXT,
+    "receiptFooter" TEXT,
     CONSTRAINT "Company_pkey" PRIMARY KEY ("id")
 );
+-- Add columns if upgrading from older schema
+ALTER TABLE "Company" ADD COLUMN IF NOT EXISTS "logoUrl" TEXT;
+ALTER TABLE "Company" ADD COLUMN IF NOT EXISTS "address" TEXT;
+ALTER TABLE "Company" ADD COLUMN IF NOT EXISTS "phone" TEXT;
+ALTER TABLE "Company" ADD COLUMN IF NOT EXISTS "receiptHeader" TEXT;
+ALTER TABLE "Company" ADD COLUMN IF NOT EXISTS "receiptFooter" TEXT;
 
 -- User (for admin login)
 CREATE TABLE IF NOT EXISTS "User" (
@@ -77,7 +89,6 @@ CREATE TABLE IF NOT EXISTS "Item" (
     "reorderPoint" INTEGER NOT NULL DEFAULT 0,
     "isWeightPriced" BOOLEAN NOT NULL DEFAULT false,
     "imageUrl" TEXT,
-    "isAgeRestricted" BOOLEAN NOT NULL DEFAULT false,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "quantityOnHand" INTEGER NOT NULL DEFAULT 0,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -91,6 +102,23 @@ CREATE TABLE IF NOT EXISTS "Item" (
 CREATE UNIQUE INDEX IF NOT EXISTS "Item_companyId_barcode_key" ON "Item"("companyId", "barcode");
 CREATE INDEX IF NOT EXISTS "Item_companyId_isActive_idx" ON "Item"("companyId", "isActive");
 CREATE INDEX IF NOT EXISTS "Item_companyId_name_idx" ON "Item"("companyId", "name");
+
+-- Customer
+CREATE TABLE IF NOT EXISTS "Customer" (
+    "id" TEXT NOT NULL,
+    "companyId" TEXT NOT NULL,
+    "phone" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "email" TEXT,
+    "loyaltyPoints" INTEGER NOT NULL DEFAULT 0,
+    "totalSpent" DOUBLE PRECISION NOT NULL DEFAULT 0,
+    "visitCount" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "Customer_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "Customer_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "Company"("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "Customer_companyId_phone_key" ON "Customer"("companyId", "phone");
 
 -- Shift
 CREATE TABLE IF NOT EXISTS "Shift" (
@@ -110,23 +138,6 @@ CREATE TABLE IF NOT EXISTS "Shift" (
     CONSTRAINT "Shift_employeeId_fkey" FOREIGN KEY ("employeeId") REFERENCES "Employee"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
     CONSTRAINT "Shift_closedByEmployeeId_fkey" FOREIGN KEY ("closedByEmployeeId") REFERENCES "Employee"("id") ON DELETE SET NULL ON UPDATE CASCADE
 );
-
--- Customer
-CREATE TABLE IF NOT EXISTS "Customer" (
-    "id" TEXT NOT NULL,
-    "companyId" TEXT NOT NULL,
-    "phone" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "email" TEXT,
-    "loyaltyPoints" INTEGER NOT NULL DEFAULT 0,
-    "totalSpent" DOUBLE PRECISION NOT NULL DEFAULT 0,
-    "visitCount" INTEGER NOT NULL DEFAULT 0,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "Customer_pkey" PRIMARY KEY ("id"),
-    CONSTRAINT "Customer_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "Company"("id") ON DELETE CASCADE ON UPDATE CASCADE
-);
-CREATE UNIQUE INDEX IF NOT EXISTS "Customer_companyId_phone_key" ON "Customer"("companyId", "phone");
 
 -- Transaction
 CREATE TABLE IF NOT EXISTS "Transaction" (
@@ -280,16 +291,19 @@ CREATE TABLE IF NOT EXISTS "GiftCard" (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS "GiftCard_barcode_key" ON "GiftCard"("barcode");
 
--- GiftCardUsage (track redemptions)
+-- GiftCardUsage
 CREATE TABLE IF NOT EXISTS "GiftCardUsage" (
     "id" TEXT NOT NULL,
     "giftCardId" TEXT NOT NULL,
     "transactionId" TEXT,
     "amount" DOUBLE PRECISION NOT NULL,
+    "balanceAfter" DOUBLE PRECISION NOT NULL DEFAULT 0,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "GiftCardUsage_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "GiftCardUsage_giftCardId_fkey" FOREIGN KEY ("giftCardId") REFERENCES "GiftCard"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
+-- Add column if upgrading from older schema
+ALTER TABLE "GiftCardUsage" ADD COLUMN IF NOT EXISTS "balanceAfter" DOUBLE PRECISION NOT NULL DEFAULT 0;
 
 -- AuditTrail
 CREATE TABLE IF NOT EXISTS "AuditTrail" (
@@ -297,16 +311,59 @@ CREATE TABLE IF NOT EXISTS "AuditTrail" (
     "companyId" TEXT NOT NULL,
     "action" TEXT NOT NULL,
     "entityType" TEXT NOT NULL,
-    "entityId" TEXT NOT NULL,
-    "description" TEXT,
+    "entityId" TEXT,
+    "description" TEXT NOT NULL DEFAULT '',
     "employeeId" TEXT,
     "employeeName" TEXT,
     "authorizedById" TEXT,
     "authorizedByName" TEXT,
     "metadata" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "AuditTrail_pkey" PRIMARY KEY ("id"),
-    CONSTRAINT "AuditTrail_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "Company"("id") ON DELETE CASCADE ON UPDATE CASCADE
+    CONSTRAINT "AuditTrail_pkey" PRIMARY KEY ("id")
 );
 CREATE INDEX IF NOT EXISTS "AuditTrail_companyId_createdAt_idx" ON "AuditTrail"("companyId", "createdAt" DESC);
 CREATE INDEX IF NOT EXISTS "AuditTrail_companyId_action_idx" ON "AuditTrail"("companyId", "action");
+
+-- ItemPriceHistory (for price optimization)
+CREATE TABLE IF NOT EXISTS "ItemPriceHistory" (
+    "id" TEXT NOT NULL,
+    "itemId" TEXT NOT NULL,
+    "price" DOUBLE PRECISION NOT NULL,
+    "cost" DOUBLE PRECISION NOT NULL,
+    "startDate" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "endDate" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "ItemPriceHistory_pkey" PRIMARY KEY ("id")
+);
+CREATE INDEX IF NOT EXISTS "ItemPriceHistory_itemId_startDate_idx" ON "ItemPriceHistory"("itemId", "startDate");
+CREATE INDEX IF NOT EXISTS "ItemPriceHistory_itemId_endDate_idx" ON "ItemPriceHistory"("itemId", "endDate");
+
+-- AdminSettings (password protection for admin portal)
+CREATE TABLE IF NOT EXISTS "AdminSettings" (
+    "id" TEXT NOT NULL,
+    "companyId" TEXT NOT NULL,
+    "adminPassword" TEXT,
+    "masterCode" TEXT NOT NULL DEFAULT '999999',
+    "isLocked" BOOLEAN NOT NULL DEFAULT false,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "AdminSettings_pkey" PRIMARY KEY ("id")
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "AdminSettings_companyId_key" ON "AdminSettings"("companyId");
+
+-- SyncQueue (offline transaction sync)
+CREATE TABLE IF NOT EXISTS "SyncQueue" (
+    "id" TEXT NOT NULL,
+    "companyId" TEXT NOT NULL,
+    "entityType" TEXT NOT NULL,
+    "entityData" TEXT NOT NULL,
+    "localId" TEXT NOT NULL,
+    "serverTransactionNumber" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'pending',
+    "conflictResolution" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "syncedAt" TIMESTAMP(3),
+    CONSTRAINT "SyncQueue_pkey" PRIMARY KEY ("id")
+);
+CREATE INDEX IF NOT EXISTS "SyncQueue_companyId_status_idx" ON "SyncQueue"("companyId", "status");
+CREATE INDEX IF NOT EXISTS "SyncQueue_companyId_entityType_idx" ON "SyncQueue"("companyId", "entityType");
