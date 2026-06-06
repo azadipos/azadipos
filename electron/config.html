@@ -129,7 +129,7 @@
       </div>
       <div class="row">
         <div><label>Username</label><input type="text" id="dbUser" value="postgres" /></div>
-        <div><label>Password</label><input type="password" id="dbPass" placeholder="PostgreSQL password" /></div>
+        <div><label>Password</label><input type="password" id="dbPass" placeholder="PostgreSQL password" autocomplete="off" /></div>
       </div>
       <div id="dbSetupStatus"></div>
       <div class="btn-row">
@@ -152,7 +152,7 @@
       </div>
       <div class="row">
         <div><label>Username</label><input type="text" id="tUser" value="postgres" /></div>
-        <div><label>Password</label><input type="password" id="tPass" placeholder="Password" /></div>
+        <div><label>Password</label><input type="password" id="tPass" placeholder="Password" autocomplete="off" /></div>
       </div>
       <div id="terminalStatus"></div>
       <button class="btn btn-primary" onclick="connectTerminal()">Connect & Start POS</button>
@@ -225,9 +225,9 @@
         actionsEl.innerHTML = `
           <p style="font-size:0.85rem; color:#94a3b8; margin-bottom:12px;">PostgreSQL is required for the server. Click below to download and install it automatically.</p>
           <label>Set PostgreSQL Password</label>
-          <input type="password" id="pgPassword" placeholder="Choose a strong password" />
+          <input type="password" id="pgPassword" placeholder="Choose a strong password (min 4 chars)" autocomplete="new-password" />
           <label>Confirm Password</label>
-          <input type="password" id="pgPasswordConfirm" placeholder="Confirm password" />
+          <input type="password" id="pgPasswordConfirm" placeholder="Confirm password" autocomplete="new-password" />
           <button class="btn btn-primary" onclick="installPostgres()">📥 Download & Install PostgreSQL</button>
           <div id="pgInstallStatus" style="margin-top:12px;"></div>
         `;
@@ -237,10 +237,16 @@
     async function installPostgres() {
       const pw = document.getElementById('pgPassword').value;
       const pwc = document.getElementById('pgPasswordConfirm').value;
-      if (!pw || pw.length < 4) { alert('Password must be at least 4 characters'); return; }
-      if (pw !== pwc) { alert('Passwords do not match'); return; }
-
       const statusEl = document.getElementById('pgInstallStatus');
+      if (!pw || pw.length < 4) {
+        statusEl.innerHTML = '<div class="alert alert-error">Password must be at least 4 characters</div>';
+        return;
+      }
+      if (pw !== pwc) {
+        statusEl.innerHTML = '<div class="alert alert-error">Passwords do not match</div>';
+        return;
+      }
+
       statusEl.innerHTML = `
         <div class="alert alert-info"><span class="spinner"></span> <span id="downloadLabel">Downloading PostgreSQL...</span></div>
         <div class="progress-bar"><div class="progress-fill" id="downloadProgress" style="width:0%"></div></div>

@@ -456,11 +456,37 @@ async function waitForServer(url, timeoutMs = 90000) {
 
 async function testDatabaseConnection(connectionString, timeoutMs = 5000) {
   log(`Testing database connection...`);
+  
+  // Parse the connection string manually to ensure all params are properly typed.
+  // The pg library can throw "password must be a string" if the URL parser
+  // returns a non-string type for purely-numeric passwords like "1234".
+  let clientConfig;
+  try {
+    const url = new URL(connectionString);
+    clientConfig = {
+      host: url.hostname || 'localhost',
+      port: parseInt(url.port) || 5432,
+      user: decodeURIComponent(url.username) || 'postgres',
+      password: String(decodeURIComponent(url.password) || ''),
+      database: url.pathname.replace(/^\//, '') || 'azadipos',
+      connectionTimeoutMillis: timeoutMs,
+      query_timeout: timeoutMs,
+    };
+    log(`Parsed connection: host=${clientConfig.host}, port=${clientConfig.port}, user=${clientConfig.user}, db=${clientConfig.database}`);
+  } catch (parseError) {
+    log(`Failed to parse connection string as URL, using raw string: ${parseError.message}`);
+    clientConfig = {
+      connectionString: String(connectionString),
+      connectionTimeoutMillis: timeoutMs,
+      query_timeout: timeoutMs,
+    };
+  }
+  
   const timeoutPromise = new Promise((_, reject) => {
-    setTimeout(() => reject(new Error('Connection timed out after 5 seconds')), timeoutMs);
+    setTimeout(() => reject(new Error('Connection timed out after 5 seconds. Check that the server IP is correct, PostgreSQL is running, and port 5432 is not blocked by a firewall.')), timeoutMs);
   });
   const connectionPromise = (async () => {
-    const client = new Client({ connectionString, connectionTimeoutMillis: timeoutMs, query_timeout: timeoutMs });
+    const client = new Client(clientConfig);
     try {
       await client.connect();
       await client.query('SELECT 1');
@@ -470,7 +496,18 @@ async function testDatabaseConnection(connectionString, timeoutMs = 5000) {
     } catch (error) {
       log(`Database connection failed: ${error.message}`);
       try { await client.end(); } catch (e) {}
-      return { success: false, error: error.message };
+      // Provide user-friendly error messages
+      let friendlyError = error.message;
+      if (error.message.includes('pg_hba.conf')) {
+        friendlyError = 'Server rejected the connection. The database is not configured to accept network connections. On the server computer, click "Enable LAN Access for Terminals" in the Server Info panel, or run the app as Administrator.';
+      } else if (error.message.includes('ECONNREFUSED')) {
+        friendlyError = 'Connection refused. PostgreSQL may not be running on the server, or the IP/port is wrong.';
+      } else if (error.message.includes('timeout') || error.message.includes('ETIMEDOUT')) {
+        friendlyError = 'Connection timed out. Check that: (1) the server IP is correct, (2) both computers are on the same network, (3) Windows Firewall allows port 5432 on the server.';
+      } else if (error.message.includes('password')) {
+        friendlyError = 'Authentication failed. Check that the password is correct.';
+      }
+      return { success: false, error: friendlyError };
     }
   })();
   try {
