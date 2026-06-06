@@ -6,8 +6,9 @@ import { AdminLayout } from "@/components/admin-layout";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { formatCurrency } from "@/lib/helpers";
-import { Package, AlertTriangle, Truck, TrendingDown, CheckCircle2 } from "lucide-react";
+import { Package, AlertTriangle, Truck, TrendingDown, CheckCircle2, Settings2, Save, ChevronDown, ChevronUp } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { Input } from "@/components/ui/input";
 
 interface ReorderItem {
   id: string;
@@ -31,6 +32,16 @@ interface GroupedItems {
   };
 }
 
+interface UnconfiguredItem {
+  id: string;
+  name: string;
+  barcode: string;
+  quantityOnHand: number;
+  cost: number;
+  category: { id: string; name: string } | null;
+  vendor: { id: string; name: string } | null;
+}
+
 export default function ReorderPage() {
   const params = useParams();
   const companyId = params?.companyId as string;
@@ -38,10 +49,77 @@ export default function ReorderPage() {
   const [loading, setLoading] = useState(true);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [orderedItems, setOrderedItems] = useState<Set<string>>(new Set());
+
+  // Bulk reorder point setup
+  const [showBulkSetup, setShowBulkSetup] = useState(false);
+  const [unconfiguredItems, setUnconfiguredItems] = useState<UnconfiguredItem[]>([]);
+  const [unconfiguredStats, setUnconfiguredStats] = useState({ totalItems: 0, configuredCount: 0 });
+  const [bulkValues, setBulkValues] = useState<Record<string, string>>({});
+  const [savingBulk, setSavingBulk] = useState(false);
+  const [bulkSaved, setBulkSaved] = useState(false);
+  const [defaultReorderValue, setDefaultReorderValue] = useState("5");
   
   useEffect(() => {
     fetchReorderItems();
+    fetchUnconfiguredItems();
   }, [companyId]);
+
+  const fetchUnconfiguredItems = async () => {
+    try {
+      const res = await fetch(`/api/items/reorder/bulk?companyId=${companyId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setUnconfiguredItems(data.unconfigured ?? []);
+        setUnconfiguredStats({ totalItems: data.totalItems, configuredCount: data.configuredCount });
+        // Initialize bulk values with default
+        const vals: Record<string, string> = {};
+        (data.unconfigured ?? []).forEach((item: UnconfiguredItem) => {
+          vals[item.id] = "5";
+        });
+        setBulkValues(vals);
+      }
+    } catch (err) {
+      console.error("Failed to fetch unconfigured items:", err);
+    }
+  };
+
+  const applyDefaultToAll = () => {
+    const vals: Record<string, string> = {};
+    unconfiguredItems.forEach(item => {
+      vals[item.id] = defaultReorderValue;
+    });
+    setBulkValues(vals);
+  };
+
+  const saveBulkReorderPoints = async () => {
+    setSavingBulk(true);
+    setBulkSaved(false);
+    try {
+      const updates = Object.entries(bulkValues)
+        .filter(([, val]) => parseInt(val) > 0)
+        .map(([id, val]) => ({ id, reorderPoint: parseInt(val) }));
+
+      if (updates.length === 0) return;
+
+      const res = await fetch("/api/items/reorder/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyId, updates }),
+      });
+
+      if (res.ok) {
+        setBulkSaved(true);
+        // Refresh both lists
+        await fetchReorderItems();
+        await fetchUnconfiguredItems();
+        setTimeout(() => setBulkSaved(false), 3000);
+      }
+    } catch (err) {
+      console.error("Failed to save reorder points:", err);
+    } finally {
+      setSavingBulk(false);
+    }
+  };
   
   const fetchReorderItems = async () => {
     try {
@@ -170,6 +248,92 @@ export default function ReorderPage() {
           <strong>Order Qty</strong> = Suggested quantity to order based on: (reorder level × 2) - current stock.
           This ensures you have buffer stock above the minimum reorder threshold.
         </div>
+
+        {/* Bulk Reorder Point Setup */}
+        {unconfiguredItems.length > 0 && (
+          <div className="bg-amber-900/20 border border-amber-700/30 rounded-lg overflow-hidden">
+            <button
+              onClick={() => setShowBulkSetup(!showBulkSetup)}
+              className="w-full p-4 flex items-center justify-between hover:bg-amber-900/30 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <Settings2 className="h-5 w-5 text-amber-400" />
+                <div className="text-left">
+                  <p className="font-medium text-amber-300">
+                    {unconfiguredItems.length} item{unconfiguredItems.length !== 1 ? "s" : ""} without reorder points
+                  </p>
+                  <p className="text-sm text-amber-400/70">
+                    {unconfiguredStats.configuredCount} of {unconfiguredStats.totalItems} items configured — set reorder points so alerts work
+                  </p>
+                </div>
+              </div>
+              {showBulkSetup ? <ChevronUp className="h-5 w-5 text-amber-400" /> : <ChevronDown className="h-5 w-5 text-amber-400" />}
+            </button>
+
+            <AnimatePresence>
+              {showBulkSetup && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="overflow-hidden"
+                >
+                  <div className="p-4 border-t border-amber-700/30 space-y-4">
+                    {/* Apply default to all */}
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <span className="text-sm text-gray-300">Set all to:</span>
+                      <Input
+                        type="number"
+                        value={defaultReorderValue}
+                        onChange={(e) => setDefaultReorderValue(e.target.value)}
+                        className="w-20 bg-gray-800 border-gray-600 text-white text-center"
+                        min="1"
+                      />
+                      <Button size="sm" variant="outline" onClick={applyDefaultToAll} className="border-gray-600">
+                        Apply to All
+                      </Button>
+                      <div className="flex-1" />
+                      <Button
+                        size="sm"
+                        onClick={saveBulkReorderPoints}
+                        disabled={savingBulk}
+                        className="bg-green-600 hover:bg-green-700"
+                      >
+                        {savingBulk ? <LoadingSpinner size="sm" /> : <Save className="h-4 w-4 mr-2" />}
+                        {bulkSaved ? "Saved!" : "Save All"}
+                      </Button>
+                    </div>
+
+                    {/* Item list */}
+                    <div className="max-h-96 overflow-y-auto space-y-1">
+                      {unconfiguredItems.map(item => (
+                        <div key={item.id} className="flex items-center gap-3 p-2 rounded hover:bg-gray-800/50">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{item.name}</p>
+                            <p className="text-xs text-gray-500">
+                              {item.barcode} · Stock: {item.quantityOnHand}
+                              {item.category ? ` · ${item.category.name}` : ""}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-gray-500">Reorder at:</span>
+                            <Input
+                              type="number"
+                              value={bulkValues[item.id] || ""}
+                              onChange={(e) => setBulkValues(prev => ({ ...prev, [item.id]: e.target.value }))}
+                              className="w-20 bg-gray-800 border-gray-600 text-white text-center text-sm"
+                              min="0"
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
         
         {Object.keys(groupedItems).length === 0 ? (
           <div className="text-center py-20 bg-gray-800/50 rounded-lg border border-gray-700">

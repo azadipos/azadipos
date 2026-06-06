@@ -212,6 +212,41 @@ export default function SettingsPage() {
         <div class="item-row"><span>Payment: Cash</span><span>${formatCurrency(50)}</span></div>
         <div class="item-row"><span>Change:</span><span>${formatCurrency(3.59)}</span></div>
         
+        <div style="text-align:center;margin:8px 0;">
+          <svg viewBox="0 0 200 40" width="200" height="40" style="margin:0 auto;">
+            <rect x="5" y="0" width="2" height="30" fill="black"/>
+            <rect x="10" y="0" width="1" height="30" fill="black"/>
+            <rect x="14" y="0" width="3" height="30" fill="black"/>
+            <rect x="20" y="0" width="1" height="30" fill="black"/>
+            <rect x="24" y="0" width="2" height="30" fill="black"/>
+            <rect x="30" y="0" width="1" height="30" fill="black"/>
+            <rect x="34" y="0" width="3" height="30" fill="black"/>
+            <rect x="40" y="0" width="2" height="30" fill="black"/>
+            <rect x="46" y="0" width="1" height="30" fill="black"/>
+            <rect x="50" y="0" width="2" height="30" fill="black"/>
+            <rect x="56" y="0" width="3" height="30" fill="black"/>
+            <rect x="62" y="0" width="1" height="30" fill="black"/>
+            <rect x="66" y="0" width="2" height="30" fill="black"/>
+            <rect x="72" y="0" width="1" height="30" fill="black"/>
+            <rect x="76" y="0" width="3" height="30" fill="black"/>
+            <rect x="82" y="0" width="2" height="30" fill="black"/>
+            <rect x="88" y="0" width="1" height="30" fill="black"/>
+            <rect x="94" y="0" width="2" height="30" fill="black"/>
+            <rect x="100" y="0" width="3" height="30" fill="black"/>
+            <rect x="108" y="0" width="1" height="30" fill="black"/>
+            <rect x="114" y="0" width="2" height="30" fill="black"/>
+            <rect x="120" y="0" width="1" height="30" fill="black"/>
+            <rect x="126" y="0" width="3" height="30" fill="black"/>
+            <rect x="134" y="0" width="2" height="30" fill="black"/>
+            <rect x="140" y="0" width="1" height="30" fill="black"/>
+            <rect x="148" y="0" width="3" height="30" fill="black"/>
+            <rect x="156" y="0" width="2" height="30" fill="black"/>
+            <rect x="164" y="0" width="1" height="30" fill="black"/>
+            <rect x="172" y="0" width="3" height="30" fill="black"/>
+            <rect x="180" y="0" width="2" height="30" fill="black"/>
+            <text x="100" y="38" text-anchor="middle" font-family="monospace" font-size="8">TXN-20260216-123456</text>
+          </svg>
+        </div>
         <div class="footer center">
           <div class="line"></div>
           ${s.receiptFooter ? `<div>${s.receiptFooter}</div>` : "<div>Thank you for your purchase!</div>"}
@@ -475,6 +510,16 @@ export default function SettingsPage() {
                   <span>$38.32</span>
                 </div>
                 <div className="border-t border-dashed border-gray-400 my-2" />
+                <div className="text-center my-2">
+                  <div className="inline-flex flex-col items-center">
+                    <div className="flex gap-px">
+                      {[2,1,3,1,2,1,3,2,1,2,3,1,2,1,3,2,1,2,3,1,2,1,3,2,1,3,2,1,3,2].map((w, i) => (
+                        <div key={i} className={`bg-black`} style={{ width: `${w}px`, height: '30px', display: i % 2 === 0 ? 'block' : 'none' }} />
+                      ))}
+                    </div>
+                    <div className="text-[9px] font-mono mt-0.5">TXN-20260216-123456</div>
+                  </div>
+                </div>
                 <div className="text-center mt-2">
                   {settings.receiptFooter || "Thank you for your purchase!"}
                 </div>
