@@ -314,7 +314,15 @@
       statusEl.innerHTML = '<div class="alert alert-success">✅ Database is ready!</div>';
       
       // Save config and show launch card
-      await ipcRenderer.invoke('save-config', { databaseUrl: result.connectionString, mode: 'server' });
+      await ipcRenderer.invoke('save-config', {
+        databaseUrl: result.connectionString,
+        mode: 'server',
+        host: document.getElementById('dbHost').value,
+        port: document.getElementById('dbPort').value,
+        username: document.getElementById('dbUser').value,
+        password: document.getElementById('dbPass').value,
+        dbName: document.getElementById('dbName').value,
+      });
       showLaunchCard(result.connectionString, true);
     }
 
@@ -339,7 +347,19 @@
         return;
       }
       statusEl.innerHTML = '<div class="alert alert-success">✅ Connected to server!</div>';
-      await ipcRenderer.invoke('save-config', { databaseUrl: connString, mode: 'terminal' });
+      // Parse fields for explicit storage
+      let termFields = {};
+      try {
+        const parsedUrl = new URL(connString);
+        termFields = {
+          host: parsedUrl.hostname,
+          port: parsedUrl.port || '5432',
+          username: decodeURIComponent(parsedUrl.username),
+          password: decodeURIComponent(parsedUrl.password),
+          dbName: parsedUrl.pathname.slice(1),
+        };
+      } catch(e) {}
+      await ipcRenderer.invoke('save-config', { databaseUrl: connString, mode: 'terminal', ...termFields });
       showLaunchCard(connString, false);
     }
 

@@ -150,7 +150,24 @@ function loadConfig() {
     const configPath = getConfigPath();
     if (fs.existsSync(configPath)) {
       const data = fs.readFileSync(configPath, 'utf8');
-      return JSON.parse(data);
+      const config = JSON.parse(data);
+      // Ensure parsed fields exist (backwards-compat with configs saved before this change)
+      if (config && config.databaseUrl && !config.host) {
+        try {
+          const url = new URL(config.databaseUrl);
+          config.host = url.hostname || 'localhost';
+          config.port = url.port || '5432';
+          config.username = decodeURIComponent(url.username) || 'postgres';
+          config.password = decodeURIComponent(url.password) || '';
+          config.dbName = url.pathname.replace(/^\//, '') || 'azadipos';
+          log(`Backfilled config fields from URL: host=${config.host}, user=${config.username}, db=${config.dbName}, password=${config.password ? '****' : '(empty)'}`);
+          // Re-save with the fields included
+          saveConfig(config);
+        } catch (e) {
+          log(`Failed to backfill config from URL: ${e.message}`);
+        }
+      }
+      return config;
     }
   } catch (error) {
     log(`Error loading config: ${error.message}`);

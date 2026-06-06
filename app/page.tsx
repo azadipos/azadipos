@@ -25,6 +25,7 @@ interface ServerInfo {
   username: string;
   password: string;
   dbName: string;
+  connectionString: string;
   localIps: Array<{ name: string; address: string }>;
 }
 
@@ -55,19 +56,36 @@ export default function HomePage() {
         window.electron.getLocalIps(),
       ]);
       if (config?.databaseUrl) {
-        try {
-          const url = new URL(config.databaseUrl);
-          setServerInfo({
-            host: url.hostname,
-            port: url.port || '5432',
-            username: decodeURIComponent(url.username),
-            password: decodeURIComponent(url.password),
-            dbName: url.pathname.replace(/^\//, ''),
-            localIps: ips || [],
-          });
-        } catch {
-          setServerInfo(null);
+        // Prefer explicit fields saved in config (reliable), fall back to URL parsing
+        let host = config.host || '';
+        let port = config.port || '5432';
+        let username = config.username || '';
+        let password = config.password || '';
+        let dbName = config.dbName || '';
+        
+        // Fall back to parsing from URL if fields are missing
+        if (!host || !username) {
+          try {
+            const url = new URL(config.databaseUrl);
+            host = host || url.hostname || 'localhost';
+            port = port || url.port || '5432';
+            username = username || decodeURIComponent(url.username) || 'postgres';
+            password = password || decodeURIComponent(url.password) || '';
+            dbName = dbName || url.pathname.replace(/^\//, '') || 'azadipos';
+          } catch {
+            // URL parsing failed, use whatever fields we have
+          }
         }
+        
+        setServerInfo({
+          host,
+          port,
+          username,
+          password,
+          dbName,
+          connectionString: config.databaseUrl,
+          localIps: ips || [],
+        });
       }
     } catch (err) {
       console.error('Failed to load server info:', err);
@@ -256,27 +274,56 @@ export default function HomePage() {
                           <label className="text-xs text-gray-500 uppercase tracking-wide">Password</label>
                           <div className="flex items-center justify-between bg-gray-900/60 rounded-lg px-3 py-2 mt-1">
                             <span className="text-white font-mono text-sm">
-                              {showPassword ? serverInfo.password : '••••••••••'}
+                              {showPassword 
+                                ? (serverInfo.password || <span className="text-gray-500 italic">not stored</span>)
+                                : (serverInfo.password ? '•'.repeat(serverInfo.password.length) : <span className="text-gray-500 italic">not stored</span>)
+                              }
                             </span>
                             <div className="flex items-center gap-1">
-                              <button
-                                onClick={() => setShowPassword(!showPassword)}
-                                className="text-gray-400 hover:text-blue-400 transition-colors p-1"
-                              >
-                                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                              </button>
-                              <button
-                                onClick={() => copyToClipboard(serverInfo.password, 'password')}
-                                className="text-gray-400 hover:text-blue-400 transition-colors p-1"
-                              >
-                                {copied === 'password' ? <Check className="h-4 w-4 text-green-400" /> : <Copy className="h-4 w-4" />}
-                              </button>
+                              {serverInfo.password && (
+                                <>
+                                  <button
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    className="text-gray-400 hover:text-blue-400 transition-colors p-1"
+                                  >
+                                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                  </button>
+                                  <button
+                                    onClick={() => copyToClipboard(serverInfo.password, 'password')}
+                                    className="text-gray-400 hover:text-blue-400 transition-colors p-1"
+                                  >
+                                    {copied === 'password' ? <Check className="h-4 w-4 text-green-400" /> : <Copy className="h-4 w-4" />}
+                                  </button>
+                                </>
+                              )}
                             </div>
                           </div>
                         </div>
 
                         {/* Database Name */}
                         <InfoRow label="Database Name" value={serverInfo.dbName} onCopy={() => copyToClipboard(serverInfo.dbName, 'dbname')} copied={copied === 'dbname'} />
+
+                        {/* Connection String for Terminals */}
+                        {serverInfo.localIps.length > 0 && serverInfo.password && (
+                          <div className="mt-3 pt-3 border-t border-gray-700">
+                            <label className="text-xs text-gray-500 uppercase tracking-wide">Connection String for Terminals</label>
+                            <p className="text-xs text-gray-400 mt-1 mb-2">Copy this and paste it on your terminal computer:</p>
+                            {serverInfo.localIps.map((ip) => {
+                              const connStr = `postgresql://${serverInfo.username}:${encodeURIComponent(serverInfo.password)}@${ip.address}:${serverInfo.port}/${serverInfo.dbName}`;
+                              return (
+                                <div key={ip.address} className="flex items-center justify-between bg-blue-900/30 border border-blue-800/50 rounded-lg px-3 py-2 mt-1">
+                                  <span className="text-blue-200 font-mono text-xs break-all mr-2">{connStr}</span>
+                                  <button
+                                    onClick={() => copyToClipboard(connStr, `conn-${ip.address}`)}
+                                    className="text-gray-400 hover:text-blue-400 transition-colors p-1 flex-shrink-0"
+                                  >
+                                    {copied === `conn-${ip.address}` ? <Check className="h-4 w-4 text-green-400" /> : <Copy className="h-4 w-4" />}
+                                  </button>
+                                </div>
+                              );
+                            })}  
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <p className="text-sm text-red-400">Could not load connection info. Try reconfiguring.</p>
