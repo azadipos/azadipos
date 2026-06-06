@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
       profitMargin: 0,
     };
     
-    transactions.forEach((t: any) => {
+    transactions.forEach((t) => {
       if (t.type === "sale" && t.status !== "deleted") {
         summary.totalSales += t.total;
         summary.saleCount++;
@@ -67,7 +67,7 @@ export async function GET(req: NextRequest) {
         if (t.paymentMethod === "card") summary.cardSales += t.total;
         
         // Calculate cost for profit
-        t.items.forEach((item: any) => {
+        t.items.forEach((item) => {
           const itemCost = item.item.cost || 0;
           summary.totalCost += itemCost * item.quantity;
         });
@@ -76,7 +76,7 @@ export async function GET(req: NextRequest) {
         summary.refundCount++;
         
         // Subtract cost for refunded items
-        t.items.forEach((item: any) => {
+        t.items.forEach((item) => {
           const itemCost = item.item.cost || 0;
           summary.totalCost -= itemCost * item.quantity;
         });
@@ -97,7 +97,7 @@ export async function GET(req: NextRequest) {
     if (groupBy === "day" || groupBy === "week" || groupBy === "month") {
       const grouped: { [key: string]: { sales: number; refunds: number; count: number; tax: number; cost: number } } = {};
       
-      transactions.forEach((t: any) => {
+      transactions.forEach((t) => {
         if (t.status === "deleted" && t.type !== "void") return;
         
         const date = new Date(t.createdAt);
@@ -121,19 +121,19 @@ export async function GET(req: NextRequest) {
           grouped[key].sales += t.total;
           grouped[key].count++;
           grouped[key].tax += t.tax;
-          t.items.forEach((item: any) => {
+          t.items.forEach((item) => {
             grouped[key].cost += (item.item.cost || 0) * item.quantity;
           });
         } else if (t.type === "refund") {
           grouped[key].refunds += Math.abs(t.total);
-          t.items.forEach((item: any) => {
+          t.items.forEach((item) => {
             grouped[key].cost -= (item.item.cost || 0) * item.quantity;
           });
         }
       });
       
       breakdown = Object.entries(grouped)
-        .map(([date, data]: [string, any]) => ({
+        .map(([date, data]) => ({
           date,
           ...data,
           net: data.sales - data.refunds,
@@ -144,10 +144,10 @@ export async function GET(req: NextRequest) {
     } else if (groupBy === "category") {
       const grouped: { [key: string]: { name: string; sales: number; cost: number; quantity: number; count: number } } = {};
       
-      transactions.forEach((t: any) => {
+      transactions.forEach((t) => {
         if (t.type !== "sale" || t.status === "deleted") return;
         
-        t.items.forEach((item: any) => {
+        t.items.forEach((item) => {
           const cat = item.item.category;
           const catId = cat?.id || "uncategorized";
           const catName = cat?.name || "Uncategorized";
@@ -174,7 +174,7 @@ export async function GET(req: NextRequest) {
     } else if (groupBy === "employee") {
       const grouped: { [key: string]: { name: string; sales: number; refunds: number; count: number; refundCount: number } } = {};
       
-      transactions.forEach((t: any) => {
+      transactions.forEach((t) => {
         if (t.status === "deleted" && t.type !== "void") return;
         
         const empId = t.employee.id;
@@ -194,15 +194,15 @@ export async function GET(req: NextRequest) {
       });
       
       breakdown = Object.entries(grouped)
-        .map(([id, data]: [string, any]) => ({ id, ...data, net: data.sales - data.refunds }))
+        .map(([id, data]) => ({ id, ...data, net: data.sales - data.refunds }))
         .sort((a, b) => b.sales - a.sales);
     }
     
     // Top selling items with profit
     const itemSales: { [key: string]: { id: string; name: string; quantity: number; revenue: number; cost: number } } = {};
-    transactions.forEach((t: any) => {
+    transactions.forEach((t) => {
       if (t.type !== "sale" || t.status === "deleted") return;
-      t.items.forEach((item: any) => {
+      t.items.forEach((item) => {
         if (!itemSales[item.itemId]) {
           itemSales[item.itemId] = { id: item.itemId, name: item.itemName, quantity: 0, revenue: 0, cost: 0 };
         }
@@ -224,10 +224,10 @@ export async function GET(req: NextRequest) {
     // Tax breakdown by rate (for state tax reconciliation)
     const taxByRate: { [rate: string]: { rate: number; taxableAmount: number; taxCollected: number; itemCount: number; categoryName: string } } = {};
     
-    transactions.forEach((t: any) => {
+    transactions.forEach((t) => {
       if (t.type !== "sale" || t.status === "deleted") return;
       
-      t.items.forEach((item: any) => {
+      t.items.forEach((item) => {
         const taxRate = item.item.category?.taxRate || 0;
         const rateKey = taxRate.toFixed(3); // Use 3 decimal places as key
         const categoryName = item.item.category?.name || "No Category (Tax Exempt)";
@@ -238,12 +238,12 @@ export async function GET(req: NextRequest) {
             taxableAmount: 0, 
             taxCollected: 0, 
             itemCount: 0,
-            categoryName: taxRate === 0 ? "Tax Exempt Items" : `${(taxRate * 100).toFixed(2)}% Rate Items`
+            categoryName: taxRate === 0 ? "Tax Exempt Items" : `${taxRate.toFixed(2)}% Rate Items`
           };
         }
         
         const lineSubtotal = item.lineTotal;
-        const lineTax = lineSubtotal * taxRate;
+        const lineTax = lineSubtotal * (taxRate / 100);
         
         taxByRate[rateKey].taxableAmount += lineSubtotal;
         taxByRate[rateKey].taxCollected += lineTax;
@@ -256,7 +256,7 @@ export async function GET(req: NextRequest) {
       .sort((a, b) => b.rate - a.rate)
       .map(entry => ({
         rate: entry.rate,
-        ratePercent: (entry.rate * 100).toFixed(2),
+        ratePercent: entry.rate.toFixed(2),
         taxableAmount: entry.taxableAmount,
         taxCollected: entry.taxCollected,
         itemCount: entry.itemCount,

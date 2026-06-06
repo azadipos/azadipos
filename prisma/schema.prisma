@@ -1,6 +1,7 @@
 generator client {
     provider = "prisma-client-js"
-    binaryTargets = ["native", "windows", "debian-openssl-3.0.x"]
+    binaryTargets = ["native", "linux-musl-arm64-openssl-3.0.x"]
+    output = "/home/ubuntu/retail_pos_system/nextjs_space/node_modules/.prisma/client"
 }
 
 datasource db {
@@ -164,6 +165,7 @@ model Transaction {
   customer              Customer? @relation(fields: [customerId], references: [id])
   loyaltyPointsEarned   Int      @default(0)
   loyaltyPointsRedeemed Int      @default(0)
+  loyaltyRewardDiscount Float    @default(0)
   createdAt             DateTime @default(now())
   
   items                 TransactionItem[]

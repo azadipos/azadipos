@@ -576,6 +576,12 @@ export default function TransactionsPage() {
                               <td colSpan={3} className="text-right text-gray-400">Tax:</td>
                               <td className="text-right">{formatCurrency(txn?.tax)}</td>
                             </tr>
+                            {(txn as any)?.loyaltyRewardDiscount > 0 && (
+                              <tr className="text-rose-400">
+                                <td colSpan={3} className="text-right">Loyalty Reward:</td>
+                                <td className="text-right">-{formatCurrency((txn as any).loyaltyRewardDiscount)}</td>
+                              </tr>
+                            )}
                             <tr className="font-semibold">
                               <td colSpan={3} className="text-right">Total:</td>
                               <td className="text-right">{formatCurrency(txn?.total)}</td>

@@ -12,12 +12,13 @@ import { motion, AnimatePresence } from "framer-motion";
 
 interface CartData {
   items: any[];
-  totals: { subtotal: number; tax: number; total: number; storeCreditTotal?: number; giftCardTotal?: number; grossTotal?: number };
+  totals: { subtotal: number; tax: number; total: number; storeCreditTotal?: number; giftCardTotal?: number; grossTotal?: number; loyaltyRewardDiscount?: number; promotionSavings?: number };
   transactionId: string;
   employeeId: string;
   shiftId: string;
   appliedStoreCredits?: { barcode: string; amount: number }[];
   appliedGiftCards?: { barcode: string; amount: number; giftCardId: string }[];
+  appliedReward?: { tier: any; discount: number; description: string; pointsRedeemed: number } | null;
   customer?: { id: string; name: string; phone: string; loyaltyPoints: number } | null;
 }
 
@@ -93,6 +94,8 @@ export default function PaymentPage() {
         storeCreditApplied: cartData.totals?.storeCreditTotal || 0,
         giftCardApplied: cartData.totals?.giftCardTotal || 0,
         customerId: cartData.customer?.id || null,
+        loyaltyPointsRedeemed: cartData.appliedReward?.pointsRedeemed || 0,
+        loyaltyRewardDiscount: cartData.appliedReward?.discount || 0,
         items: regularItems.map((item) => ({
           itemId: item?.itemId,
           itemName: item?.name,
@@ -508,7 +511,10 @@ export default function PaymentPage() {
                             shiftId: shiftId,
                             paymentMethod: "split",
                             cashGiven: splitPayment1.method === "cash" ? splitPayment1.amount : null,
-                            items: (cartData?.items ?? []).map((item) => ({
+                            customerId: cartData?.customer?.id || null,
+                            loyaltyPointsRedeemed: cartData?.appliedReward?.pointsRedeemed || 0,
+                            loyaltyRewardDiscount: cartData?.appliedReward?.discount || 0,
+                            items: (cartData?.items ?? []).filter((item) => !item?.id?.startsWith("gc-")).map((item) => ({
                               itemId: item?.itemId,
                               itemName: item?.name,
                               quantity: item?.quantity,
@@ -569,7 +575,10 @@ export default function PaymentPage() {
                               shiftId: shiftId,
                               paymentMethod: "split",
                               cashGiven: (splitPayment1.method === "cash" ? splitPayment1.amount : 0) + parseFloat(cashGiven),
-                              items: (cartData?.items ?? []).map((item) => ({
+                              customerId: cartData?.customer?.id || null,
+                              loyaltyPointsRedeemed: cartData?.appliedReward?.pointsRedeemed || 0,
+                              loyaltyRewardDiscount: cartData?.appliedReward?.discount || 0,
+                              items: (cartData?.items ?? []).filter((item) => !item?.id?.startsWith("gc-")).map((item) => ({
                                 itemId: item?.itemId,
                                 itemName: item?.name,
                                 quantity: item?.quantity,

@@ -159,6 +159,7 @@ CREATE TABLE IF NOT EXISTS "Transaction" (
     "customerId" TEXT,
     "loyaltyPointsEarned" INTEGER NOT NULL DEFAULT 0,
     "loyaltyPointsRedeemed" INTEGER NOT NULL DEFAULT 0,
+    "loyaltyRewardDiscount" DOUBLE PRECISION NOT NULL DEFAULT 0,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "Transaction_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "Transaction_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "Company"("id") ON DELETE CASCADE ON UPDATE CASCADE,

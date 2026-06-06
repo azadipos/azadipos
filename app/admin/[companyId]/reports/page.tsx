@@ -83,6 +83,7 @@ export default function ReportsPage() {
   const companyId = params?.companyId as string;
   
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [summary, setSummary] = useState<Summary | null>(null);
   const [breakdown, setBreakdown] = useState<BreakdownItem[]>([]);
   const [topItems, setTopItems] = useState<TopItem[]>([]);
@@ -105,17 +106,23 @@ export default function ReportsPage() {
   
   const fetchReport = async () => {
     setLoading(true);
+    setError("");
     try {
       const res = await fetch(
         `/api/reports/sales?companyId=${companyId}&startDate=${startDate}&endDate=${endDate}&groupBy=${groupBy}`
       );
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData?.error || `Server error (${res.status})`);
+      }
       const data = await res.json();
-      setSummary(data.summary);
+      setSummary(data.summary || null);
       setBreakdown(data.breakdown || []);
       setTopItems(data.topItems || []);
       setTaxBreakdown(data.taxBreakdown || []);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to fetch report:", err);
+      setError(err?.message || "Failed to load report data");
     } finally {
       setLoading(false);
     }
@@ -173,11 +180,19 @@ export default function ReportsPage() {
           </div>
         </div>
         
+        {error && (
+          <div className="p-4 bg-red-600/20 border border-red-600/30 rounded-lg text-red-400">
+            <p className="font-medium">Failed to load report</p>
+            <p className="text-sm mt-1">{error}</p>
+            <Button variant="outline" size="sm" className="mt-2" onClick={fetchReport}>Retry</Button>
+          </div>
+        )}
+        
         {loading ? (
           <div className="flex items-center justify-center h-64">
             <LoadingSpinner />
           </div>
-        ) : (
+        ) : !error ? (
           <>
             {/* Summary Cards */}
             <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
@@ -522,7 +537,7 @@ export default function ReportsPage() {
               )}
             </motion.div>
           </>
-        )}
+        ) : null}
       </div>
     </AdminLayout>
   );

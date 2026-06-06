@@ -54,7 +54,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   try {
     const data = await req.json();
-    const { employeeId, shiftId, items, paymentMethod, cashGiven, type, customerId, loyaltyPointsRedeemed } = data;
+    const { employeeId, shiftId, items, paymentMethod, cashGiven, type, customerId, loyaltyPointsRedeemed, loyaltyRewardDiscount } = data;
     
     if (!employeeId || !items || items.length === 0) {
       return NextResponse.json({ error: "Employee and items are required" }, { status: 400 });
@@ -89,7 +89,9 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       })
     );
     
-    const total = Math.round((subtotal + totalTax) * 100) / 100;
+    const grossTotal = Math.round((subtotal + totalTax) * 100) / 100;
+    const rewardDiscount = Math.round((loyaltyRewardDiscount || 0) * 100) / 100;
+    const total = Math.round((grossTotal - rewardDiscount) * 100) / 100;
     const changeDue = cashGiven ? Math.round((cashGiven - total) * 100) / 100 : null;
     
     // Calculate loyalty points earned (if customer loyalty enabled)
@@ -110,7 +112,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
               isEnabled: true,
             },
           });
-        } catch (e: any) {
+        } catch (e) {
           // Config may have been created by another request, try to fetch it
           loyaltyConfig = await prisma.loyaltyConfig.findUnique({
             where: { companyId: params.id },
@@ -119,6 +121,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       }
       
       if (loyaltyConfig?.isEnabled) {
+        // Calculate points on the amount actually paid (after reward discount)
         loyaltyPointsEarned = Math.floor(total * (loyaltyConfig.pointsPerDollar || 1));
       }
     }
@@ -139,6 +142,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
         customerId: customerId || null,
         loyaltyPointsEarned,
         loyaltyPointsRedeemed: loyaltyPointsRedeemed || 0,
+        loyaltyRewardDiscount: rewardDiscount,
         items: {
           create: itemsWithTax,
         },
