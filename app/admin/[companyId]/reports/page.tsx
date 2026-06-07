@@ -241,7 +241,7 @@ export default function ReportsPage() {
     }
     // Merge by index for comparison
     const max = Math.max(breakdown.length, comparisonBreakdown.length);
-    const merged = [];
+    const merged: { label: string; sales: number; compSales: number }[] = [];
     for (let i = 0; i < max; i++) {
       const cur = breakdown[i];
       const comp = comparisonBreakdown[i];

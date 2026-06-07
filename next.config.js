@@ -10,11 +10,12 @@ const nextConfig = {
   images: { 
     unoptimized: true 
   },
-  // Ensure Prisma query engine binaries are included in standalone output.
-  // Next.js file tracing misses dynamically-loaded .dll.node/.so.node engine files.
-  outputFileTracingIncludes: {
-    '/api/**': ['./node_modules/.prisma/client/**'],
-    '/': ['./node_modules/.prisma/client/**'],
+  experimental: {
+    // Ensure Prisma query engine binaries are included in standalone output.
+    outputFileTracingIncludes: {
+      '/api/**': ['./node_modules/.prisma/client/**'],
+      '/': ['./node_modules/.prisma/client/**'],
+    },
   },
 };
 
