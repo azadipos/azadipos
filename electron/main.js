@@ -13,12 +13,14 @@ Menu.setApplicationMenu(null);
 
 const isDev = !app.isPackaged;
 let mainWindow = null;
+let serverStatusWindow = null;
 let configWindow = null;  // SEPARATE variable for config window
 let splashWindow = null;
 let serverProcess = null;
 let serverStarted = false;
 let currentConfig = null;
 let connectionAborted = false;
+let heartbeatInterval = null;
 
 // PostgreSQL installer URL
 const POSTGRES_DOWNLOAD_URL = 'https://get.enterprisedb.com/postgresql/postgresql-16.4-1-windows-x64.exe';
@@ -659,7 +661,69 @@ function createMainWindow() {
     configWindow = null;
   }
   
-  // Create the main POS window
+  const mode = currentConfig ? currentConfig.mode : null;
+  log(`Creating windows for mode: ${mode || 'default'}`);
+
+  if (mode === 'server') {
+    // SERVER MODE: Open Server Status window + Admin Portal window
+    createServerStatusWindow();
+    createAdminWindow();
+    // Create desktop shortcuts for server mode
+    createModeShortcuts('server');
+  } else if (mode === 'terminal') {
+    // TERMINAL MODE: Open POS terminal window only
+    createPOSWindow();
+    // Start heartbeat to server
+    startTerminalHeartbeat();
+    // Create desktop shortcuts for terminal mode
+    createModeShortcuts('terminal');
+  } else {
+    // FALLBACK: default window (no mode configured, legacy config)
+    createPOSWindow();
+  }
+}
+
+function createServerStatusWindow() {
+  const win = new BrowserWindow({
+    width: 900, height: 700,
+    webPreferences: {
+      nodeIntegration: false, contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js'),
+    },
+    autoHideMenuBar: true, title: 'AzadiPOS - Server Status', show: false,
+  });
+  
+  serverStatusWindow = win;
+  win.loadURL('http://127.0.0.1:3000/server-status');
+  win.once('ready-to-show', () => {
+    if (win && !win.isDestroyed()) win.show();
+  });
+  win.on('closed', () => {
+    if (serverStatusWindow === win) serverStatusWindow = null;
+  });
+}
+
+function createAdminWindow() {
+  const win = new BrowserWindow({
+    width: 1280, height: 800,
+    webPreferences: {
+      nodeIntegration: false, contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js'),
+    },
+    autoHideMenuBar: true, title: 'AzadiPOS - Admin Portal', show: false,
+  });
+  
+  mainWindow = win;
+  win.loadURL('http://127.0.0.1:3000');
+  win.once('ready-to-show', () => {
+    if (win && !win.isDestroyed()) win.show();
+  });
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = null;
+  });
+}
+
+function createPOSWindow() {
   const win = new BrowserWindow({
     width: 1280, height: 800,
     webPreferences: {
@@ -669,22 +733,106 @@ function createMainWindow() {
     autoHideMenuBar: true, title: 'AzadiPOS', show: false,
   });
   
-  // Assign to mainWindow BEFORE loading URL
   mainWindow = win;
-  
   win.loadURL('http://127.0.0.1:3000');
   win.once('ready-to-show', () => {
-    // Use the local 'win' reference, NOT mainWindow — avoids race condition
-    if (win && !win.isDestroyed()) {
-      win.show();
-    }
+    if (win && !win.isDestroyed()) win.show();
   });
   win.on('closed', () => {
-    // Only null out if this is still the current mainWindow
-    if (mainWindow === win) {
-      mainWindow = null;
-    }
+    if (mainWindow === win) mainWindow = null;
   });
+}
+
+// ==================== DESKTOP SHORTCUTS ====================
+
+function createModeShortcuts(mode) {
+  if (process.platform !== 'win32' || isDev) return;
+  
+  try {
+    const desktopDir = path.join(os.homedir(), 'Desktop');
+    const exePath = process.execPath;
+    
+    // Clean up any previous mode shortcuts
+    const oldShortcuts = [
+      'AzadiPOS - Server Status.lnk',
+      'AzadiPOS - Admin Portal.lnk',
+      'AzadiPOS - Terminal.lnk',
+    ];
+    for (const name of oldShortcuts) {
+      const p = path.join(desktopDir, name);
+      try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch (e) {}
+    }
+    
+    if (mode === 'server') {
+      // Create "Server Status" shortcut
+      shell.writeShortcutLink(path.join(desktopDir, 'AzadiPOS - Server Status.lnk'), {
+        target: exePath,
+        args: '--open=server-status',
+        description: 'AzadiPOS Server Status Dashboard',
+      });
+      // Create "Admin Portal" shortcut
+      shell.writeShortcutLink(path.join(desktopDir, 'AzadiPOS - Admin Portal.lnk'), {
+        target: exePath,
+        args: '--open=admin',
+        description: 'AzadiPOS Administration Portal',
+      });
+      log('Created server-mode desktop shortcuts');
+    } else if (mode === 'terminal') {
+      // Create "Terminal" shortcut
+      shell.writeShortcutLink(path.join(desktopDir, 'AzadiPOS - Terminal.lnk'), {
+        target: exePath,
+        args: '--open=terminal',
+        description: 'AzadiPOS Point of Sale Terminal',
+      });
+      log('Created terminal-mode desktop shortcut');
+    }
+  } catch (error) {
+    log(`Failed to create shortcuts: ${error.message}`);
+  }
+}
+
+// ==================== TERMINAL HEARTBEAT ====================
+
+function startTerminalHeartbeat() {
+  if (heartbeatInterval) clearInterval(heartbeatInterval);
+  
+  const sendHeartbeat = () => {
+    if (!currentConfig) return;
+    const serverUrl = currentConfig.mode === 'terminal' && currentConfig.host
+      ? `http://${currentConfig.host}:3000`
+      : 'http://127.0.0.1:3000';
+    
+    const terminalId = getOrCreateTerminalId();
+    const data = JSON.stringify({
+      terminalId,
+      name: `Terminal ${terminalId}`,
+      status: 'online',
+      shiftOpen: false, // Will be updated by the app itself
+    });
+    
+    const url = new URL(`${serverUrl}/api/system/heartbeat`);
+    const options = {
+      hostname: url.hostname,
+      port: url.port || 3000,
+      path: url.pathname,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
+      timeout: 5000,
+    };
+    
+    const req = http.request(options, (res) => {
+      res.on('data', () => {}); // consume
+    });
+    req.on('error', () => {}); // silent fail
+    req.on('timeout', () => req.destroy());
+    req.write(data);
+    req.end();
+  };
+  
+  // Send immediately, then every 30 seconds
+  sendHeartbeat();
+  heartbeatInterval = setInterval(sendHeartbeat, 30000);
+  log('Terminal heartbeat started');
 }
 
 // ==================== IPC HANDLERS ====================
@@ -1001,12 +1149,93 @@ async function attemptAutoStart() {
 
 // ==================== APP LIFECYCLE ====================
 
+// Single instance lock — if another instance is launched (e.g., via shortcut),
+// the existing instance handles it instead
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  // Another instance is already running — it will receive our argv via second-instance event
+  app.quit();
+} else {
+  app.on('second-instance', (event, argv) => {
+    log(`Second instance detected with args: ${argv.join(' ')}`);
+    // Check for --open= in the new instance's args
+    let openTarget = null;
+    for (const arg of argv) {
+      if (arg.startsWith('--open=')) {
+        openTarget = arg.split('=')[1];
+        break;
+      }
+    }
+    if (openTarget === 'server-status') {
+      if (serverStatusWindow && !serverStatusWindow.isDestroyed()) {
+        serverStatusWindow.focus();
+      } else {
+        createServerStatusWindow();
+      }
+    } else if (openTarget === 'admin') {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.focus();
+      } else {
+        createAdminWindow();
+      }
+    } else if (openTarget === 'terminal') {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.focus();
+      } else {
+        createPOSWindow();
+      }
+    } else {
+      // No --open arg, just focus existing window
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.focus();
+      } else if (serverStatusWindow && !serverStatusWindow.isDestroyed()) {
+        serverStatusWindow.focus();
+      }
+    }
+  });
+}
+
+// Parse command line for --open= argument (used by desktop shortcuts)
+function getOpenArg() {
+  const args = process.argv;
+  for (const arg of args) {
+    if (arg.startsWith('--open=')) {
+      return arg.split('=')[1];
+    }
+  }
+  return null;
+}
+
 app.whenReady().then(async () => {
   log('=== AzadiPOS Starting ===');
   log(`App path: ${app.getAppPath()}`);
   log(`User data path: ${app.getPath('userData')}`);
   log(`Is packaged: ${app.isPackaged}`);
   log(`Terminal ID: ${getOrCreateTerminalId()}`);
+  log(`Args: ${process.argv.join(' ')}`);
+  
+  const openArg = getOpenArg();
+  
+  // If launched via a shortcut with --open=, check if server is already running
+  if (openArg) {
+    log(`Shortcut launch detected: --open=${openArg}`);
+    const serverUp = await waitForServer('http://127.0.0.1:3000', 3000);
+    if (serverUp) {
+      log('Server already running, opening requested window directly');
+      currentConfig = loadConfig();
+      if (openArg === 'server-status') {
+        createServerStatusWindow();
+      } else if (openArg === 'admin') {
+        createAdminWindow();
+      } else {
+        createPOSWindow();
+      }
+      return;
+    }
+    // Server not running yet, fall through to normal startup
+    log('Server not running, proceeding with normal startup');
+  }
+  
   createSplashWindow();
   await new Promise(r => setTimeout(r, 300));
   await attemptAutoStart();
@@ -1014,11 +1243,13 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   log('All windows closed');
+  if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
   if (serverProcess) { log('Killing server process'); serverProcess.kill(); }
   if (process.platform !== 'darwin') app.quit();
 });
 
 app.on('before-quit', () => {
   log('App quitting');
+  if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
   if (serverProcess) serverProcess.kill();
 });
