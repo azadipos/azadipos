@@ -9,7 +9,7 @@ import { usePOS } from "@/lib/pos-context";
 import { formatCurrency } from "@/lib/helpers";
 import { ArrowLeft, CreditCard, Banknote, CheckCircle, SplitSquareVertical, Printer, XCircle, AlertTriangle, RefreshCw, Wifi } from "lucide-react";
 import { printReceipt } from "@/lib/receipt";
-import { sendCardPayment, cancelCardPayment, isElectronHardwareAvailable } from "@/lib/hardware";
+import { sendCardPayment, cancelCardPayment, isElectronHardwareAvailable, openCashDrawer } from "@/lib/hardware";
 import type { CardPaymentResponse } from "@/lib/hardware";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -53,6 +53,9 @@ export default function PaymentPage() {
   // Store card data for receipt
   const [savedCardData, setSavedCardData] = useState<CardPaymentResponse | null>(null);
   
+  // Cashback state
+  const [cashbackAmount, setCashbackAmount] = useState("");
+  
   useEffect(() => {
     if (!employee) {
       router.push(`/pos/${companyId}/login`);
@@ -88,6 +91,7 @@ export default function PaymentPage() {
   // Send payment to card terminal
   const initiateCardPayment = async (amount?: number) => {
     const payAmount = amount || total;
+    const cashback = parseFloat(cashbackAmount) || 0;
     setCardStatus("sending");
     setCardResponse(null);
     setError("");
@@ -95,7 +99,8 @@ export default function PaymentPage() {
     try {
       setCardStatus("waiting");
       const response = await sendCardPayment({
-        amount: payAmount,
+        amount: payAmount + cashback,
+        cashbackAmount: cashback > 0 ? cashback : undefined,
         transactionId: cartData?.transactionId || "",
       });
       
@@ -244,6 +249,13 @@ export default function PaymentPage() {
         }
       }
       
+      // Open cash drawer when change is due or cashback was given
+      const hasCashBack = effectiveCardData?.cashbackAmount && effectiveCardData.cashbackAmount > 0;
+      const hasChangeDue = effectiveMethod === "cash" && cashGivenAmount > total;
+      if (hasChangeDue || hasCashBack) {
+        openCashDrawer().catch(() => {}); // fire-and-forget
+      }
+      
       // Clear cart and draft
       sessionStorage.removeItem("pos_cart");
       sessionStorage.removeItem("pos_cart_draft");
@@ -310,6 +322,13 @@ export default function PaymentPage() {
           {paymentMethod === "cash" && changeDue > 0 && (
             <p className="text-2xl mt-4">
               Change Due: <span className="text-yellow-400 font-bold">{formatCurrency(changeDue)}</span>
+            </p>
+          )}
+          
+          {/* Show cashback info */}
+          {savedCardData?.cashbackAmount && savedCardData.cashbackAmount > 0 && (
+            <p className="text-2xl mt-4">
+              Cashback: <span className="text-green-400 font-bold">{formatCurrency(savedCardData.cashbackAmount)}</span>
             </p>
           )}
           
@@ -524,11 +543,35 @@ export default function PaymentPage() {
                       </div>
                     )}
                   </div>
+                  {/* Cashback Option */}
+                  <div className="p-4 bg-gray-800/50 border border-gray-700 rounded-lg mb-4">
+                    <label className="block text-sm text-gray-400 mb-2">Cashback (optional)</label>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl text-gray-400">$</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        value={cashbackAmount}
+                        onChange={(e) => setCashbackAmount(e.target.value)}
+                        placeholder="0.00"
+                        className="flex-1 h-12 px-4 text-xl font-mono bg-gray-900 border border-gray-700 rounded-lg focus:border-blue-500 focus:outline-none"
+                      />
+                    </div>
+                    {parseFloat(cashbackAmount) > 0 && (
+                      <p className="text-sm text-blue-400 mt-2">
+                        Total charge: {formatCurrency(total + parseFloat(cashbackAmount))} 
+                        (purchase {formatCurrency(total)} + cashback {formatCurrency(parseFloat(cashbackAmount))})
+                      </p>
+                    )}
+                  </div>
+                  
                   <div className="flex gap-4">
                     <Button
                       variant="outline"
                       className="flex-1 h-14 border-gray-600 text-gray-300"
-                      onClick={() => setPaymentMethod(null)}
+                      onClick={() => { setPaymentMethod(null); setCashbackAmount(""); }}
                     >
                       Back
                     </Button>

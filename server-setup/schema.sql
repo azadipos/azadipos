@@ -128,7 +128,7 @@ CREATE TABLE IF NOT EXISTS "Shift" (
     "registerId" TEXT,
     "startTime" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "endTime" TIMESTAMP(3),
-    "openingBalance" DOUBLE PRECISION NOT NULL DEFAULT 0,
+    "openingBalance" DOUBLE PRECISION,
     "closingBalance" DOUBLE PRECISION,
     "cashInjections" DOUBLE PRECISION NOT NULL DEFAULT 0,
     "status" TEXT NOT NULL DEFAULT 'open',
@@ -368,3 +368,76 @@ CREATE TABLE IF NOT EXISTS "SyncQueue" (
 );
 CREATE INDEX IF NOT EXISTS "SyncQueue_companyId_status_idx" ON "SyncQueue"("companyId", "status");
 CREATE INDEX IF NOT EXISTS "SyncQueue_companyId_entityType_idx" ON "SyncQueue"("companyId", "entityType");
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- MIGRATION: Add columns that may be missing on databases created from older schemas.
+-- All use ADD COLUMN IF NOT EXISTS so they are safe to run repeatedly.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+-- Employee columns added after initial release
+ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "inSales" BOOLEAN NOT NULL DEFAULT true;
+
+-- Item columns added after initial release
+ALTER TABLE "Item" ADD COLUMN IF NOT EXISTS "isWeightPriced" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "Item" ADD COLUMN IF NOT EXISTS "returnPeriodDays" INTEGER;
+ALTER TABLE "Item" ADD COLUMN IF NOT EXISTS "noReturns" BOOLEAN NOT NULL DEFAULT false;
+
+-- Shift columns added after initial release
+ALTER TABLE "Shift" ADD COLUMN IF NOT EXISTS "openingBalance" DOUBLE PRECISION;
+-- Make openingBalance nullable if it was previously NOT NULL (allows distinguishing 'not set' from '$0')
+ALTER TABLE "Shift" ALTER COLUMN "openingBalance" DROP NOT NULL;
+ALTER TABLE "Shift" ALTER COLUMN "openingBalance" DROP DEFAULT;
+ALTER TABLE "Shift" ADD COLUMN IF NOT EXISTS "registerId" TEXT;
+ALTER TABLE "Shift" ADD COLUMN IF NOT EXISTS "cashInjections" DOUBLE PRECISION NOT NULL DEFAULT 0;
+ALTER TABLE "Shift" ADD COLUMN IF NOT EXISTS "closedByEmployeeId" TEXT;
+-- Add FK constraint for closedByEmployeeId if it doesn't exist
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'Shift_closedByEmployeeId_fkey'
+  ) THEN
+    ALTER TABLE "Shift" ADD CONSTRAINT "Shift_closedByEmployeeId_fkey"
+      FOREIGN KEY ("closedByEmployeeId") REFERENCES "Employee"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+  END IF;
+END $$;
+
+-- Transaction columns added after initial release
+ALTER TABLE "Transaction" ADD COLUMN IF NOT EXISTS "linkedTransactionId" TEXT;
+ALTER TABLE "Transaction" ADD COLUMN IF NOT EXISTS "authorizedByEmployeeId" TEXT;
+ALTER TABLE "Transaction" ADD COLUMN IF NOT EXISTS "customerId" TEXT;
+ALTER TABLE "Transaction" ADD COLUMN IF NOT EXISTS "loyaltyPointsEarned" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "Transaction" ADD COLUMN IF NOT EXISTS "loyaltyPointsRedeemed" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "Transaction" ADD COLUMN IF NOT EXISTS "loyaltyRewardDiscount" DOUBLE PRECISION NOT NULL DEFAULT 0;
+-- Add FK constraints for new Transaction columns if they don't exist
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'Transaction_authorizedByEmployeeId_fkey'
+  ) THEN
+    ALTER TABLE "Transaction" ADD CONSTRAINT "Transaction_authorizedByEmployeeId_fkey"
+      FOREIGN KEY ("authorizedByEmployeeId") REFERENCES "Employee"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'Transaction_customerId_fkey'
+  ) THEN
+    ALTER TABLE "Transaction" ADD CONSTRAINT "Transaction_customerId_fkey"
+      FOREIGN KEY ("customerId") REFERENCES "Customer"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+  END IF;
+END $$;
+
+-- StoreCredit columns added after initial release
+ALTER TABLE "StoreCredit" ADD COLUMN IF NOT EXISTS "description" TEXT;
+ALTER TABLE "StoreCredit" ADD COLUMN IF NOT EXISTS "issuedByEmployeeId" TEXT;
+ALTER TABLE "StoreCredit" ADD COLUMN IF NOT EXISTS "authorizedByEmployeeId" TEXT;
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'StoreCredit_issuedByEmployeeId_fkey'
+  ) THEN
+    ALTER TABLE "StoreCredit" ADD CONSTRAINT "StoreCredit_issuedByEmployeeId_fkey"
+      FOREIGN KEY ("issuedByEmployeeId") REFERENCES "Employee"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'StoreCredit_authorizedByEmployeeId_fkey'
+  ) THEN
+    ALTER TABLE "StoreCredit" ADD CONSTRAINT "StoreCredit_authorizedByEmployeeId_fkey"
+      FOREIGN KEY ("authorizedByEmployeeId") REFERENCES "Employee"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+  END IF;
+END $$;

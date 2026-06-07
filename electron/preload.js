@@ -28,4 +28,13 @@ contextBridge.exposeInMainWorld('electron', {
   getLocalIps: () => ipcRenderer.invoke('get-local-ips'),
   // Configure PostgreSQL for LAN access (updates pg_hba.conf and restarts service)
   configureLanAccess: () => ipcRenderer.invoke('configure-lan-access'),
+  // Backup & Restore
+  backupDatabase: () => ipcRenderer.invoke('backup-database'),
+  restoreDatabase: (backupPath) => ipcRenderer.invoke('restore-database', backupPath),
+  listBackups: () => ipcRenderer.invoke('list-backups'),
+  openBackupFolder: () => ipcRenderer.invoke('open-backup-folder'),
+  browseBackupFile: () => ipcRenderer.invoke('browse-backup-file'),
+  getAppDataPaths: () => ipcRenderer.invoke('get-app-data-paths'),
+  // Open log file
+  openLogFile: () => ipcRenderer.invoke('open-log-file'),
 });

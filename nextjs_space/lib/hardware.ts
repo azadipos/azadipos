@@ -15,6 +15,7 @@
 
 export interface CardPaymentRequest {
   amount: number;           // Total amount in dollars
+  cashbackAmount?: number;  // Cashback amount requested by customer
   transactionId: string;    // POS transaction reference
   merchantId?: string;      // Optional merchant ID
 }
@@ -29,6 +30,7 @@ export interface CardPaymentResponse {
   referenceNumber?: string; // Processor reference number
   entryMethod?: string;     // "chip", "tap", "swipe", "manual"
   cardholderName?: string;  // Name on card (if available)
+  cashbackAmount?: number;  // Confirmed cashback amount from processor
   error?: string;           // Error message if success is false
 }
 
@@ -57,12 +59,14 @@ export interface PrintResponse {
 interface ElectronHardwareAPI {
   sendPayment: (request: CardPaymentRequest) => Promise<CardPaymentResponse>;
   cancelPayment: () => Promise<void>;
+  openCashDrawer: () => Promise<{ success: boolean; error?: string }>;
   readScale: () => Promise<ScaleReading>;
   subscribeScale: (callback: (reading: ScaleReading) => void) => () => void;
   printSilent: (request: PrintRequest) => Promise<PrintResponse>;
   getPrinters: () => Promise<string[]>;
   getScaleStatus: () => Promise<{ connected: boolean; model?: string }>;
   getTerminalStatus: () => Promise<{ connected: boolean; model?: string }>;
+  getCashDrawerStatus: () => Promise<{ connected: boolean; model?: string }>;
 }
 
 declare global {
@@ -85,26 +89,30 @@ export async function getHardwareStatus(): Promise<{
   terminal: { connected: boolean; model?: string };
   scale: { connected: boolean; model?: string };
   printer: { connected: boolean; printers: string[] };
+  cashDrawer: { connected: boolean; model?: string };
 }> {
   if (!isElectronHardwareAvailable()) {
     return {
       terminal: { connected: false },
       scale: { connected: false },
       printer: { connected: false, printers: [] },
+      cashDrawer: { connected: false },
     };
   }
 
   const api = window.electronHardware!;
-  const [terminal, scale, printers] = await Promise.all([
+  const [terminal, scale, printers, cashDrawer] = await Promise.all([
     api.getTerminalStatus().catch(() => ({ connected: false })),
     api.getScaleStatus().catch(() => ({ connected: false })),
     api.getPrinters().catch(() => []),
+    api.getCashDrawerStatus?.().catch(() => ({ connected: false })) ?? Promise.resolve({ connected: false }),
   ]);
 
   return {
     terminal,
     scale,
     printer: { connected: printers.length > 0, printers },
+    cashDrawer,
   };
 }
 
@@ -149,6 +157,31 @@ export async function cancelCardPayment(): Promise<void> {
   if (isElectronHardwareAvailable()) {
     await window.electronHardware!.cancelPayment();
   }
+}
+
+// ─── Cash Drawer ─────────────────────────────────────────────────────────────
+
+/**
+ * Open the cash drawer.
+ * In Electron mode: sends kick pulse via serial/USB/printer DK port.
+ * In browser mode: no-op (returns success for manual drawer).
+ * 
+ * Cash drawer is triggered on:
+ * - Cash payment with change due
+ * - Cashback from card payment
+ * - Shift end cash extraction
+ * - Manual open by manager
+ */
+export async function openCashDrawer(): Promise<{ success: boolean; error?: string }> {
+  if (isElectronHardwareAvailable()) {
+    try {
+      return await window.electronHardware!.openCashDrawer();
+    } catch (err: any) {
+      return { success: false, error: err?.message || "Cash drawer communication error" };
+    }
+  }
+  // Browser fallback: no physical drawer to open
+  return { success: true };
 }
 
 // ─── Scanner/Scale ───────────────────────────────────────────────────────────

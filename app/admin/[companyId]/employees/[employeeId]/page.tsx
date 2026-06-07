@@ -68,7 +68,7 @@ interface Shift {
   id: string;
   startTime: string;
   endTime: string | null;
-  openingBalance: number;
+  openingBalance: number | null;
   closingBalance: number | null;
   cashInjections: number;
   status: string;
@@ -513,11 +513,16 @@ export default function EmployeeStatsPage() {
                           {shift.status}
                         </span>
                         <p className="text-sm text-gray-400 mt-1">
-                          Opening: {formatCurrency(shift.openingBalance)}
-                          {shift.cashInjections > 0 && (
+                          Opening: {formatCurrency(shift.openingBalance ?? 0)}
+                          {(shift.cashInjections ?? 0) > 0 && (
                             <> • +{formatCurrency(shift.cashInjections)}</>
                           )}
                         </p>
+                        {shift.closedBy && (
+                          <p className="text-xs text-purple-400 mt-0.5">
+                            ✓ {shift.closedBy.name}
+                          </p>
+                        )}
                       </div>
                       <ChevronRight className="h-5 w-5 text-gray-500 group-hover:text-gray-300 transition-colors" />
                     </div>

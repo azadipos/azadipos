@@ -8,6 +8,7 @@ import { Modal } from "@/components/modal";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { usePOS } from "@/lib/pos-context";
 import { formatCurrency } from "@/lib/helpers";
+import { openCashDrawer } from "@/lib/hardware";
 import {
   ArrowLeft,
   Clock,
@@ -44,7 +45,7 @@ interface ShiftData {
   id: string;
   startTime: string;
   endTime: string | null;
-  openingBalance: number;
+  openingBalance: number | null;
   closingBalance: number | null;
   cashInjections: number;
   status: string;
@@ -181,6 +182,9 @@ export default function ShiftReportPage() {
       });
       
       if (res.ok) {
+        // Open cash drawer for cash extraction
+        openCashDrawer().catch(() => {});
+        
         setShowAuthModal(false);
         setClosedByManager(manager.name);
         setClosed(true);
@@ -203,7 +207,7 @@ export default function ShiftReportPage() {
   
   const expectedCash = (() => {
     if (!shift || !stats) return 0;
-    return shift.openingBalance + shift.cashInjections + stats.cashSales - Math.abs(stats.totalRefunds);
+    return (shift.openingBalance ?? 0) + (shift.cashInjections ?? 0) + stats.cashSales - Math.abs(stats.totalRefunds);
   })();
   
   const variance = closingBalance ? parseFloat(closingBalance) - expectedCash : 0;

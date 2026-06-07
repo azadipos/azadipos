@@ -14,6 +14,11 @@ export async function GET(
       where: {
         employeeId,
       },
+      include: {
+        closedBy: {
+          select: { id: true, name: true },
+        },
+      },
       orderBy: {
         startTime: "desc",
       },

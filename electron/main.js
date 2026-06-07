@@ -1052,6 +1052,204 @@ ipcMain.handle('clear-offline-queue', async () => {
   return { success: true };
 });
 
+// ==================== BACKUP & RESTORE ====================
+
+function findPgDumpPath() {
+  const commonPaths = [
+    'C:\\Program Files\\PostgreSQL',
+    'C:\\Program Files (x86)\\PostgreSQL',
+  ];
+  for (const basePath of commonPaths) {
+    if (fs.existsSync(basePath)) {
+      try {
+        const versions = fs.readdirSync(basePath).filter(f => /^\d+$/.test(f));
+        if (versions.length > 0) {
+          const latestVersion = versions.sort((a, b) => parseInt(b) - parseInt(a))[0];
+          const pgDump = path.join(basePath, latestVersion, 'bin', 'pg_dump.exe');
+          if (fs.existsSync(pgDump)) return pgDump;
+        }
+      } catch (e) {}
+    }
+  }
+  return null;
+}
+
+function findPgRestorePath() {
+  const commonPaths = [
+    'C:\\Program Files\\PostgreSQL',
+    'C:\\Program Files (x86)\\PostgreSQL',
+  ];
+  for (const basePath of commonPaths) {
+    if (fs.existsSync(basePath)) {
+      try {
+        const versions = fs.readdirSync(basePath).filter(f => /^\d+$/.test(f));
+        if (versions.length > 0) {
+          const latestVersion = versions.sort((a, b) => parseInt(b) - parseInt(a))[0];
+          const pgRestore = path.join(basePath, latestVersion, 'bin', 'pg_restore.exe');
+          if (fs.existsSync(pgRestore)) return pgRestore;
+        }
+      } catch (e) {}
+    }
+  }
+  return null;
+}
+
+ipcMain.handle('backup-database', async () => {
+  if (!currentConfig) return { success: false, error: 'No database configured' };
+  
+  const pgDump = findPgDumpPath();
+  if (!pgDump) return { success: false, error: 'pg_dump not found. Is PostgreSQL installed?' };
+  
+  // Create backup directory
+  const backupDir = path.join(app.getPath('userData'), 'backups');
+  if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
+  
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const backupFile = path.join(backupDir, `azadipos-backup-${timestamp}.sql`);
+  
+  try {
+    const url = new URL(currentConfig.databaseUrl);
+    const env = {
+      ...process.env,
+      PGPASSWORD: decodeURIComponent(url.password),
+    };
+    
+    return new Promise((resolve) => {
+      const args = [
+        '-h', url.hostname,
+        '-p', url.port || '5432',
+        '-U', decodeURIComponent(url.username),
+        '-d', url.pathname.replace(/^\//, ''),
+        '-F', 'p', // plain SQL format
+        '-f', backupFile,
+        '--no-owner',
+        '--no-privileges',
+      ];
+      
+      log(`Running pg_dump: ${pgDump} ${args.join(' ')}`);
+      const proc = spawn(pgDump, args, { env, stdio: ['pipe', 'pipe', 'pipe'] });
+      let stderr = '';
+      proc.stderr.on('data', (data) => { stderr += data.toString(); });
+      proc.on('close', (code) => {
+        if (code === 0) {
+          log(`Backup created: ${backupFile}`);
+          resolve({ success: true, path: backupFile });
+        } else {
+          log(`Backup failed: ${stderr}`);
+          resolve({ success: false, error: `pg_dump failed: ${stderr}` });
+        }
+      });
+      proc.on('error', (err) => {
+        resolve({ success: false, error: `Failed to run pg_dump: ${err.message}` });
+      });
+    });
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle('restore-database', async (event, backupPath) => {
+  if (!currentConfig) return { success: false, error: 'No database configured' };
+  
+  if (!fs.existsSync(backupPath)) return { success: false, error: 'Backup file not found' };
+  
+  try {
+    const url = new URL(currentConfig.databaseUrl);
+    const env = {
+      ...process.env,
+      PGPASSWORD: decodeURIComponent(url.password),
+    };
+    
+    // Use psql to restore plain SQL backup
+    const pgInfo = await checkPostgresInstalled();
+    if (!pgInfo.installed) return { success: false, error: 'PostgreSQL not found' };
+    
+    const psqlPath = path.join(pgInfo.path, 'psql.exe');
+    const dbName = url.pathname.replace(/^\//, '');
+    
+    return new Promise((resolve) => {
+      const args = [
+        '-h', url.hostname,
+        '-p', url.port || '5432',
+        '-U', decodeURIComponent(url.username),
+        '-d', dbName,
+        '-f', backupPath,
+      ];
+      
+      log(`Running psql restore: ${psqlPath} ${args.join(' ')}`);
+      const proc = spawn(psqlPath, args, { env, stdio: ['pipe', 'pipe', 'pipe'] });
+      let stderr = '';
+      proc.stderr.on('data', (data) => { stderr += data.toString(); });
+      proc.on('close', (code) => {
+        if (code === 0) {
+          log(`Restore completed from: ${backupPath}`);
+          resolve({ success: true });
+        } else {
+          // psql may exit with non-zero but still restore successfully (warnings)
+          log(`Restore completed with warnings: ${stderr}`);
+          resolve({ success: true, warnings: stderr });
+        }
+      });
+      proc.on('error', (err) => {
+        resolve({ success: false, error: `Failed to run psql: ${err.message}` });
+      });
+    });
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle('list-backups', async () => {
+  const backupDir = path.join(app.getPath('userData'), 'backups');
+  if (!fs.existsSync(backupDir)) return [];
+  
+  try {
+    const files = fs.readdirSync(backupDir)
+      .filter(f => f.endsWith('.sql') && f.startsWith('azadipos-backup-'))
+      .sort().reverse();
+    
+    return files.map(f => {
+      const stat = fs.statSync(path.join(backupDir, f));
+      return {
+        name: f,
+        path: path.join(backupDir, f),
+        size: stat.size,
+        date: stat.mtime.toISOString(),
+      };
+    });
+  } catch (e) {
+    return [];
+  }
+});
+
+ipcMain.handle('open-backup-folder', async () => {
+  const backupDir = path.join(app.getPath('userData'), 'backups');
+  if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
+  shell.openPath(backupDir);
+  return { success: true };
+});
+
+ipcMain.handle('browse-backup-file', async () => {
+  const result = await dialog.showOpenDialog({
+    title: 'Select Backup File',
+    filters: [{ name: 'SQL Backup', extensions: ['sql'] }],
+    properties: ['openFile'],
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
+});
+
+ipcMain.handle('get-app-data-paths', async () => {
+  return {
+    userData: app.getPath('userData'),
+    config: getConfigPath(),
+    log: getLogPath(),
+    backups: path.join(app.getPath('userData'), 'backups'),
+    offlineQueue: getOfflineQueuePath(),
+    terminalId: getTerminalIdPath(),
+  };
+});
+
 // ==================== APP STARTUP ====================
 
 async function runSchemaUpdate(databaseUrl) {
