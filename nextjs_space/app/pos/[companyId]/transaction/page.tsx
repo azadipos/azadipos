@@ -8,7 +8,15 @@ import { Modal } from "@/components/modal";
 import { NumericKeypad } from "@/components/numeric-keypad";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { usePOS } from "@/lib/pos-context";
+import { useOffline } from "@/lib/offline-context";
 import { formatCurrency } from "@/lib/helpers";
+import {
+  refreshInventoryCache,
+  isCacheStale,
+  searchCachedItems,
+  lookupCachedBarcode,
+  getCacheStats,
+} from "@/lib/inventory-cache";
 import {
   ArrowLeft,
   Plus,
@@ -118,6 +126,8 @@ export default function TransactionPage() {
   const router = useRouter();
   const companyId = params?.companyId as string;
   const { employee, shiftId } = usePOS();
+  const { isOnline, isServerReachable, addOfflineTransaction, getNextLocalTransactionNumber } = useOffline();
+  const serverAvailable = isOnline && isServerReachable;
   const barcodeInputRef = useRef<HTMLInputElement>(null);
   const lastKeyTimeRef = useRef<number>(0);
   const scannerModeRef = useRef<boolean>(false);
@@ -272,6 +282,28 @@ export default function TransactionPage() {
     }
   }, [companyId]);
   
+  // Initialize / refresh inventory cache for offline use
+  useEffect(() => {
+    if (!companyId) return;
+    let cancelled = false;
+    const initCache = async () => {
+      try {
+        const stale = await isCacheStale(companyId);
+        if (stale && serverAvailable) {
+          await refreshInventoryCache(companyId);
+          if (!cancelled) {
+            const stats = await getCacheStats(companyId);
+            console.log(`[InventoryCache] Cached ${stats?.count ?? 0} items for offline use`);
+          }
+        }
+      } catch (e) {
+        console.warn("[InventoryCache] Failed to refresh cache:", e);
+      }
+    };
+    initCache();
+    return () => { cancelled = true; };
+  }, [companyId, serverAvailable]);
+
   // Always keep focus on barcode input (pause when modals are open)
   useEffect(() => {
     const focusInput = () => {
@@ -374,7 +406,7 @@ export default function TransactionPage() {
     barcodeInputRef.current?.focus();
   };
   
-  // Search items - optimized with debounce
+  // Search items - optimized with debounce, falls back to local cache offline
   const searchItems = useCallback(async (query: string) => {
     if (query.length < 1) {
       setSearchResults([]);
@@ -384,20 +416,50 @@ export default function TransactionPage() {
     
     setSearchLoading(true);
     try {
-      const res = await fetch(
-        `/api/items/search?companyId=${companyId}&q=${encodeURIComponent(query)}&limit=15`
-      );
-      if (res.ok) {
-        const data = await res.json();
-        setSearchResults(data ?? []);
-        setShowSearch(true);
+      if (serverAvailable) {
+        const res = await fetch(
+          `/api/items/search?companyId=${companyId}&q=${encodeURIComponent(query)}&limit=15`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          setSearchResults(data ?? []);
+          setShowSearch(true);
+          return;
+        }
       }
+      // Offline fallback: search local cache
+      const cached = await searchCachedItems(companyId, query, 15);
+      setSearchResults(cached.map(c => ({
+        id: c.id,
+        name: c.name,
+        barcode: c.barcode,
+        price: c.price,
+        isWeightPriced: c.isWeightPriced,
+        isAgeRestricted: c.isAgeRestricted,
+        category: c.category,
+      })));
+      setShowSearch(true);
     } catch (err) {
-      console.error("Search error:", err);
+      // Network error - try cache
+      try {
+        const cached = await searchCachedItems(companyId, query, 15);
+        setSearchResults(cached.map(c => ({
+          id: c.id,
+          name: c.name,
+          barcode: c.barcode,
+          price: c.price,
+          isWeightPriced: c.isWeightPriced,
+          isAgeRestricted: c.isAgeRestricted,
+          category: c.category,
+        })));
+        setShowSearch(true);
+      } catch {
+        console.error("Search error (online + cache):", err);
+      }
     } finally {
       setSearchLoading(false);
     }
-  }, [companyId]);
+  }, [companyId, serverAvailable]);
   
   const lookupItem = async (barcodeValue: string) => {
     if (!barcodeValue.trim()) return;
@@ -421,17 +483,32 @@ export default function TransactionPage() {
         return;
       }
       
-      const res = await fetch(
-        `/api/items/barcode/${encodeURIComponent(barcodeValue)}?companyId=${companyId}`
-      );
-      
-      if (!res.ok) {
-        setError("Item not found");
-        setBarcode("");
-        return;
+      let item: any = null;
+
+      if (serverAvailable) {
+        try {
+          const res = await fetch(
+            `/api/items/barcode/${encodeURIComponent(barcodeValue)}?companyId=${companyId}`
+          );
+          if (res.ok) {
+            item = await res.json();
+          }
+        } catch {
+          // Network error - will try cache below
+        }
       }
-      
-      const item = await res.json();
+
+      // Fallback to local cache if server didn't return an item
+      if (!item) {
+        const cached = await lookupCachedBarcode(companyId, barcodeValue);
+        if (cached) {
+          item = cached;
+        } else {
+          setError("Item not found");
+          setBarcode("");
+          return;
+        }
+      }
       
       // Check for age restriction first (from category)
       const isAgeRestricted = item.category?.isAgeRestricted ?? false;

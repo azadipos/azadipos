@@ -9,9 +9,12 @@ export async function GET() {
       orderBy: { createdAt: "desc" },
     });
     return NextResponse.json(companies);
-  } catch (error) {
-    console.error("Error fetching companies:", error);
-    return NextResponse.json({ error: "Failed to fetch companies" }, { status: 500 });
+  } catch (error: any) {
+    console.error('Error fetching companies:', error?.message, error?.code);
+    return NextResponse.json(
+      { error: `Failed to fetch companies: ${error?.message || 'Unknown error'}` },
+      { status: 500 }
+    );
   }
 }
 
@@ -25,8 +28,19 @@ export async function POST(req: Request) {
       data: { name },
     });
     return NextResponse.json(company);
-  } catch (error) {
-    console.error("Error creating company:", error);
-    return NextResponse.json({ error: "Failed to create company" }, { status: 500 });
+  } catch (error: any) {
+    const errorMessage = error?.message || 'Unknown error';
+    const errorCode = error?.code || 'UNKNOWN';
+    console.error('Error creating company:', {
+      message: errorMessage,
+      code: errorCode,
+      name: error?.name,
+      meta: error?.meta,
+      stack: error?.stack?.split('\n').slice(0, 5).join('\n'),
+    });
+    return NextResponse.json(
+      { error: `Failed to create company: ${errorMessage}` },
+      { status: 500 }
+    );
   }
 }

@@ -165,6 +165,7 @@ model Transaction {
   customer              Customer? @relation(fields: [customerId], references: [id])
   loyaltyPointsEarned   Int      @default(0)
   loyaltyPointsRedeemed Int      @default(0)
+  loyaltyRewardDiscount Float    @default(0)
   createdAt             DateTime @default(now())
   
   items                 TransactionItem[]

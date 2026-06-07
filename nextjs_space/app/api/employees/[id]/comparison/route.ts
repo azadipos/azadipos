@@ -24,7 +24,7 @@ export async function GET(
     
     // For each employee, get their stats
     const comparison = await Promise.all(
-      employees.map(async (emp) => {
+      employees.map(async (emp: any) => {
         const [salesAgg, refundAgg, storeCreditCount] = await Promise.all([
           prisma.transaction.aggregate({
             where: { employeeId: emp.id, type: "sale" },
@@ -95,12 +95,12 @@ export async function GET(
     comparison.sort((a, b) => b.totalSales - a.totalSales);
     
     // Calculate averages for comparison
-    const nonManagerCount = comparison.filter((e) => !e.isManager).length;
+    const nonManagerCount = comparison.filter((e: any) => !e.isManager).length;
     const avgRefundRate = nonManagerCount > 0
-      ? comparison.filter((e) => !e.isManager).reduce((sum, e) => sum + e.refundRate, 0) / nonManagerCount
+      ? comparison.filter((e: any) => !e.isManager).reduce((sum: number, e: any) => sum + e.refundRate, 0) / nonManagerCount
       : 0;
     const avgStoreCreditRate = nonManagerCount > 0
-      ? comparison.filter((e) => !e.isManager).reduce((sum, e) => sum + e.storeCreditRate, 0) / nonManagerCount
+      ? comparison.filter((e: any) => !e.isManager).reduce((sum: number, e: any) => sum + e.storeCreditRate, 0) / nonManagerCount
       : 0;
     
     return NextResponse.json({

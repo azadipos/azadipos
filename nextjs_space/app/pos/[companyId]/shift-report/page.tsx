@@ -58,6 +58,7 @@ export default function ShiftReportPage() {
   const { employee, shiftId, closeShift } = usePOS();
   
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState("");
   const [shift, setShift] = useState<ShiftData | null>(null);
   const [stats, setStats] = useState<ShiftStats | null>(null);
   const [closingBalance, setClosingBalance] = useState("");
@@ -87,6 +88,7 @@ export default function ShiftReportPage() {
   
   const fetchShiftData = async () => {
     if (!shiftId) return;
+    setFetchError("");
     
     try {
       // Fetch shift details
@@ -94,6 +96,9 @@ export default function ShiftReportPage() {
       if (shiftRes.ok) {
         const shiftData = await shiftRes.json();
         setShift(shiftData);
+      } else {
+        console.error("Shift fetch failed:", shiftRes.status);
+        setFetchError("Failed to load shift data");
       }
       
       // Fetch shift stats
@@ -101,9 +106,13 @@ export default function ShiftReportPage() {
       if (statsRes.ok) {
         const statsData = await statsRes.json();
         setStats(statsData);
+      } else {
+        console.error("Stats fetch failed:", statsRes.status);
+        // Don't block the page - show zeros for stats
       }
     } catch (err) {
       console.error("Failed to fetch shift data:", err);
+      setFetchError("Network error loading shift data");
     } finally {
       setLoading(false);
     }
@@ -238,6 +247,13 @@ export default function ShiftReportPage() {
           <h1 className="text-2xl font-bold">End of Day Report</h1>
           <div className="w-24" />
         </div>
+        
+        {fetchError && (
+          <div className="mb-6 p-4 bg-red-600/20 border border-red-600/30 rounded-lg text-red-400">
+            <p className="font-medium">{fetchError}</p>
+            <button onClick={fetchShiftData} className="text-sm underline mt-1">Retry</button>
+          </div>
+        )}
         
         {/* Shift Info */}
         <motion.div

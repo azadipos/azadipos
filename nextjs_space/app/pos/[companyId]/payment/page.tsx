@@ -7,17 +7,19 @@ import { NumericKeypad } from "@/components/numeric-keypad";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { usePOS } from "@/lib/pos-context";
 import { formatCurrency } from "@/lib/helpers";
-import { ArrowLeft, CreditCard, Banknote, CheckCircle, SplitSquareVertical } from "lucide-react";
+import { ArrowLeft, CreditCard, Banknote, CheckCircle, SplitSquareVertical, Printer } from "lucide-react";
+import { printReceipt } from "@/lib/receipt";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface CartData {
   items: any[];
-  totals: { subtotal: number; tax: number; total: number; storeCreditTotal?: number; giftCardTotal?: number; grossTotal?: number };
+  totals: { subtotal: number; tax: number; total: number; storeCreditTotal?: number; giftCardTotal?: number; grossTotal?: number; loyaltyRewardDiscount?: number; promotionSavings?: number };
   transactionId: string;
   employeeId: string;
   shiftId: string;
   appliedStoreCredits?: { barcode: string; amount: number }[];
   appliedGiftCards?: { barcode: string; amount: number; giftCardId: string }[];
+  appliedReward?: { tier: any; discount: number; description: string; pointsRedeemed: number } | null;
   customer?: { id: string; name: string; phone: string; loyaltyPoints: number } | null;
 }
 
@@ -33,6 +35,7 @@ export default function PaymentPage() {
   const [processing, setProcessing] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
+  const [completedTxn, setCompletedTxn] = useState<any>(null);
   
   // Split payment state
   const [splitStep, setSplitStep] = useState<1 | 2>(1);
@@ -93,6 +96,8 @@ export default function PaymentPage() {
         storeCreditApplied: cartData.totals?.storeCreditTotal || 0,
         giftCardApplied: cartData.totals?.giftCardTotal || 0,
         customerId: cartData.customer?.id || null,
+        loyaltyPointsRedeemed: cartData.appliedReward?.pointsRedeemed || 0,
+        loyaltyRewardDiscount: cartData.appliedReward?.discount || 0,
         items: regularItems.map((item) => ({
           itemId: item?.itemId,
           itemName: item?.name,
@@ -176,12 +181,45 @@ export default function PaymentPage() {
       
       // Clear cart
       sessionStorage.removeItem("pos_cart");
+      setCompletedTxn(txn);
       setSuccess(true);
+      
+      // Auto-print receipt
+      try {
+        const companyRes = await fetch(`/api/companies/${companyId}/settings`);
+        const company = companyRes.ok ? await companyRes.json() : { name: 'Store' };
+        printReceipt({
+          companyName: company.name || 'Store',
+          address: company.address,
+          phone: company.phone,
+          logoUrl: company.logoUrl,
+          receiptHeader: company.receiptHeader,
+          receiptFooter: company.receiptFooter,
+          transactionNumber: txn.transactionNumber,
+          date: new Date().toLocaleString(),
+          cashierName: txn.employee?.name || employee?.name || 'Staff',
+          items: (txn.items || []).map((i: any) => ({
+            name: i.itemName, quantity: i.quantity, unitPrice: i.unitPrice, lineTotal: i.lineTotal, isWeightItem: i.isWeightItem,
+          })),
+          subtotal: txn.subtotal,
+          tax: txn.tax,
+          total: txn.total,
+          loyaltyRewardDiscount: txn.loyaltyRewardDiscount || 0,
+          paymentMethod: txn.paymentMethod || paymentMethod || 'cash',
+          cashGiven: txn.cashGiven,
+          changeDue: txn.changeDue,
+          customerName: cartData.customer?.name,
+          loyaltyPointsEarned: txn.loyaltyPointsEarned,
+          loyaltyPointsRedeemed: txn.loyaltyPointsRedeemed,
+        });
+      } catch (printErr) {
+        console.error('Receipt print failed:', printErr);
+      }
       
       // Wait a moment to show success, then redirect
       setTimeout(() => {
         router.push(`/pos/${companyId}/transaction`);
-      }, 2000);
+      }, 4000);
     } catch (err: any) {
       console.error("Transaction error:", err);
       setError(err?.message ?? "Failed to complete transaction");
@@ -207,6 +245,34 @@ export default function PaymentPage() {
               Change Due: <span className="text-yellow-400 font-bold">{formatCurrency(changeDue)}</span>
             </p>
           )}
+          <Button
+            variant="outline"
+            className="mt-6 gap-2"
+            onClick={() => {
+              if (completedTxn && cartData) {
+                fetch(`/api/companies/${companyId}/settings`)
+                  .then(r => r.ok ? r.json() : { name: 'Store' })
+                  .then(company => {
+                    printReceipt({
+                      companyName: company.name || 'Store',
+                      address: company.address, phone: company.phone,
+                      logoUrl: company.logoUrl, receiptHeader: company.receiptHeader, receiptFooter: company.receiptFooter,
+                      transactionNumber: completedTxn.transactionNumber,
+                      date: new Date(completedTxn.createdAt).toLocaleString(),
+                      cashierName: completedTxn.employee?.name || employee?.name || 'Staff',
+                      items: (completedTxn.items || []).map((i: any) => ({ name: i.itemName, quantity: i.quantity, unitPrice: i.unitPrice, lineTotal: i.lineTotal, isWeightItem: i.isWeightItem })),
+                      subtotal: completedTxn.subtotal, tax: completedTxn.tax, total: completedTxn.total,
+                      loyaltyRewardDiscount: completedTxn.loyaltyRewardDiscount || 0,
+                      paymentMethod: completedTxn.paymentMethod, cashGiven: completedTxn.cashGiven, changeDue: completedTxn.changeDue,
+                      customerName: cartData.customer?.name,
+                      loyaltyPointsEarned: completedTxn.loyaltyPointsEarned, loyaltyPointsRedeemed: completedTxn.loyaltyPointsRedeemed,
+                    });
+                  });
+              }
+            }}
+          >
+            <Printer className="h-4 w-4" /> Print Receipt Again
+          </Button>
           <p className="text-gray-400 mt-4">Returning to transaction screen...</p>
         </motion.div>
       </div>
@@ -508,7 +574,10 @@ export default function PaymentPage() {
                             shiftId: shiftId,
                             paymentMethod: "split",
                             cashGiven: splitPayment1.method === "cash" ? splitPayment1.amount : null,
-                            items: (cartData?.items ?? []).map((item) => ({
+                            customerId: cartData?.customer?.id || null,
+                            loyaltyPointsRedeemed: cartData?.appliedReward?.pointsRedeemed || 0,
+                            loyaltyRewardDiscount: cartData?.appliedReward?.discount || 0,
+                            items: (cartData?.items ?? []).filter((item) => !item?.id?.startsWith("gc-")).map((item) => ({
                               itemId: item?.itemId,
                               itemName: item?.name,
                               quantity: item?.quantity,
@@ -569,7 +638,10 @@ export default function PaymentPage() {
                               shiftId: shiftId,
                               paymentMethod: "split",
                               cashGiven: (splitPayment1.method === "cash" ? splitPayment1.amount : 0) + parseFloat(cashGiven),
-                              items: (cartData?.items ?? []).map((item) => ({
+                              customerId: cartData?.customer?.id || null,
+                              loyaltyPointsRedeemed: cartData?.appliedReward?.pointsRedeemed || 0,
+                              loyaltyRewardDiscount: cartData?.appliedReward?.discount || 0,
+                              items: (cartData?.items ?? []).filter((item) => !item?.id?.startsWith("gc-")).map((item) => ({
                                 itemId: item?.itemId,
                                 itemName: item?.name,
                                 quantity: item?.quantity,

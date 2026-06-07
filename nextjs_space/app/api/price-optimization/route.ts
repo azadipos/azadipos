@@ -87,7 +87,7 @@ export async function GET(req: NextRequest) {
             if (matchingItem && matchingItem.cost) {
               costHistory.push({ date: log.createdAt, cost: matchingItem.cost });
             }
-          } catch (e) {
+          } catch (e: any) {
             // Skip invalid JSON
           }
         }
@@ -156,7 +156,7 @@ export async function GET(req: NextRequest) {
       })).sort((a, b) => b.price - a.price);
       
       // Calculate elasticity between price points
-      const elasticityData = [];
+      const elasticityData: { fromPrice: number; toPrice: number; elasticity: number; interpretation: string }[] = [];
       for (let i = 0; i < pricePoints.length - 1; i++) {
         const higher = pricePoints[i];
         const lower = pricePoints[i + 1];
@@ -176,7 +176,7 @@ export async function GET(req: NextRequest) {
       }
       
       // Find optimal price point (highest total profit)
-      const optimalPricePoint = pricePoints.reduce((best, current) => 
+      const optimalPricePoint = pricePoints.reduce((best: any, current: any) => 
         current.totalProfit > best.totalProfit ? current : best, 
         pricePoints[0] || { price: item.price, totalProfit: 0 }
       );
@@ -190,8 +190,8 @@ export async function GET(req: NextRequest) {
         optimalPricePoint,
         summary: {
           totalTransactions: transactionItems.length,
-          totalQuantitySold: transactionItems.reduce((sum, ti) => sum + Math.abs(ti.quantity), 0),
-          totalRevenue: transactionItems.reduce((sum, ti) => sum + Math.abs(ti.lineTotal), 0),
+          totalQuantitySold: transactionItems.reduce((sum: number, ti: any) => sum + Math.abs(ti.quantity), 0),
+          totalRevenue: transactionItems.reduce((sum: number, ti: any) => sum + Math.abs(ti.lineTotal), 0),
           currentPrice: item.price,
           currentCost: item.cost,
           pricePointCount: pricePoints.length,

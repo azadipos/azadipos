@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/modal";
 import { LoadingSpinner } from "@/components/loading-spinner";
-import { Receipt, Calendar, ChevronDown, ChevronUp, Filter, RotateCcw, DollarSign, XCircle, Trash2, AlertTriangle, CheckSquare, Square, CreditCard, Banknote, Gift, Scale } from "lucide-react";
+import { Receipt, Calendar, ChevronDown, ChevronUp, Filter, RotateCcw, DollarSign, XCircle, Trash2, AlertTriangle, CheckSquare, Square, CreditCard, Banknote, Gift, Scale, Printer } from "lucide-react";
+import { printReceipt } from "@/lib/receipt";
 import { formatCurrency, formatDate } from "@/lib/helpers";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -576,6 +577,12 @@ export default function TransactionsPage() {
                               <td colSpan={3} className="text-right text-gray-400">Tax:</td>
                               <td className="text-right">{formatCurrency(txn?.tax)}</td>
                             </tr>
+                            {(txn as any)?.loyaltyRewardDiscount > 0 && (
+                              <tr className="text-rose-400">
+                                <td colSpan={3} className="text-right">Loyalty Reward:</td>
+                                <td className="text-right">-{formatCurrency((txn as any).loyaltyRewardDiscount)}</td>
+                              </tr>
+                            )}
                             <tr className="font-semibold">
                               <td colSpan={3} className="text-right">Total:</td>
                               <td className="text-right">{formatCurrency(txn?.total)}</td>
@@ -594,6 +601,36 @@ export default function TransactionsPage() {
                             )}
                           </tfoot>
                         </table>
+                      </div>
+                      <div className="flex justify-end mt-3">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1 text-xs"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            fetch(`/api/companies/${companyId}/settings`)
+                              .then(r => r.ok ? r.json() : { name: 'Store' })
+                              .then(company => {
+                                printReceipt({
+                                  companyName: company.name || 'Store',
+                                  address: company.address, phone: company.phone,
+                                  logoUrl: company.logoUrl, receiptHeader: company.receiptHeader, receiptFooter: company.receiptFooter,
+                                  transactionNumber: txn?.transactionNumber || '',
+                                  date: new Date(txn?.createdAt).toLocaleString(),
+                                  cashierName: txn?.employee?.name || 'Staff',
+                                  items: (txn?.items || []).map((i: any) => ({ name: i.itemName, quantity: i.quantity, unitPrice: i.unitPrice, lineTotal: i.lineTotal, isWeightItem: i.isWeightItem })),
+                                  subtotal: txn?.subtotal || 0, tax: txn?.tax || 0, total: txn?.total || 0,
+                                  loyaltyRewardDiscount: (txn as any)?.loyaltyRewardDiscount || 0,
+                                  paymentMethod: txn?.paymentMethod || 'cash',
+                                  cashGiven: txn?.cashGiven, changeDue: txn?.changeDue,
+                                  loyaltyPointsEarned: (txn as any)?.loyaltyPointsEarned, loyaltyPointsRedeemed: (txn as any)?.loyaltyPointsRedeemed,
+                                });
+                              });
+                          }}
+                        >
+                          <Printer className="h-3 w-3" /> Print Receipt
+                        </Button>
                       </div>
                     </motion.div>
                   )}

@@ -20,6 +20,12 @@ import {
   Shield,
   Lock,
   ChevronRight,
+  Download,
+  CheckCircle2,
+  AlertCircle,
+  RefreshCw,
+  Clock,
+  Package,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -42,6 +48,15 @@ export default function SettingsPage() {
 
   const [loading, setLoading] = useState(true);
   const [adminHasPassword, setAdminHasPassword] = useState(false);
+
+  // Software Update state
+  const [currentVersion, setCurrentVersion] = useState("");
+  const [lastUpdate, setLastUpdate] = useState<any>(null);
+  const [updateHistory, setUpdateHistory] = useState<any[]>([]);
+  const [updateFile, setUpdateFile] = useState<File | null>(null);
+  const [updating, setUpdating] = useState(false);
+  const [updateResult, setUpdateResult] = useState<{ success: boolean; message: string } | null>(null);
+  const updateFileRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
   const [settings, setSettings] = useState<CompanySettings | null>(null);
   const [showPreview, setShowPreview] = useState(false);
@@ -74,7 +89,52 @@ export default function SettingsPage() {
     if (companyId) {
       fetchSettings();
     }
+    // Fetch version info
+    fetch("/api/system/update")
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data) {
+          setCurrentVersion(data.version || "1.0.0");
+          setLastUpdate(data.lastUpdate || null);
+          setUpdateHistory(data.updateHistory || []);
+        }
+      })
+      .catch(() => {});
   }, [companyId]);
+
+  const handleApplyUpdate = async () => {
+    if (!updateFile) return;
+    setUpdating(true);
+    setUpdateResult(null);
+    try {
+      const formData = new FormData();
+      formData.append("updateFile", updateFile);
+      const res = await fetch("/api/system/update", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setUpdateResult({ success: true, message: data.message });
+        setUpdateFile(null);
+        if (updateFileRef.current) updateFileRef.current.value = "";
+        // Refresh version info
+        const verRes = await fetch("/api/system/update");
+        if (verRes.ok) {
+          const verData = await verRes.json();
+          setCurrentVersion(verData.version || currentVersion);
+          setLastUpdate(verData.lastUpdate || null);
+          setUpdateHistory(verData.updateHistory || []);
+        }
+      } else {
+        setUpdateResult({ success: false, message: data.error || "Update failed" });
+      }
+    } catch (err: any) {
+      setUpdateResult({ success: false, message: err.message || "Update failed" });
+    } finally {
+      setUpdating(false);
+    }
+  };
 
   const handleSave = async () => {
     if (!settings) return;
@@ -212,6 +272,41 @@ export default function SettingsPage() {
         <div class="item-row"><span>Payment: Cash</span><span>${formatCurrency(50)}</span></div>
         <div class="item-row"><span>Change:</span><span>${formatCurrency(3.59)}</span></div>
         
+        <div style="text-align:center;margin:8px 0;">
+          <svg viewBox="0 0 200 40" width="200" height="40" style="margin:0 auto;">
+            <rect x="5" y="0" width="2" height="30" fill="black"/>
+            <rect x="10" y="0" width="1" height="30" fill="black"/>
+            <rect x="14" y="0" width="3" height="30" fill="black"/>
+            <rect x="20" y="0" width="1" height="30" fill="black"/>
+            <rect x="24" y="0" width="2" height="30" fill="black"/>
+            <rect x="30" y="0" width="1" height="30" fill="black"/>
+            <rect x="34" y="0" width="3" height="30" fill="black"/>
+            <rect x="40" y="0" width="2" height="30" fill="black"/>
+            <rect x="46" y="0" width="1" height="30" fill="black"/>
+            <rect x="50" y="0" width="2" height="30" fill="black"/>
+            <rect x="56" y="0" width="3" height="30" fill="black"/>
+            <rect x="62" y="0" width="1" height="30" fill="black"/>
+            <rect x="66" y="0" width="2" height="30" fill="black"/>
+            <rect x="72" y="0" width="1" height="30" fill="black"/>
+            <rect x="76" y="0" width="3" height="30" fill="black"/>
+            <rect x="82" y="0" width="2" height="30" fill="black"/>
+            <rect x="88" y="0" width="1" height="30" fill="black"/>
+            <rect x="94" y="0" width="2" height="30" fill="black"/>
+            <rect x="100" y="0" width="3" height="30" fill="black"/>
+            <rect x="108" y="0" width="1" height="30" fill="black"/>
+            <rect x="114" y="0" width="2" height="30" fill="black"/>
+            <rect x="120" y="0" width="1" height="30" fill="black"/>
+            <rect x="126" y="0" width="3" height="30" fill="black"/>
+            <rect x="134" y="0" width="2" height="30" fill="black"/>
+            <rect x="140" y="0" width="1" height="30" fill="black"/>
+            <rect x="148" y="0" width="3" height="30" fill="black"/>
+            <rect x="156" y="0" width="2" height="30" fill="black"/>
+            <rect x="164" y="0" width="1" height="30" fill="black"/>
+            <rect x="172" y="0" width="3" height="30" fill="black"/>
+            <rect x="180" y="0" width="2" height="30" fill="black"/>
+            <text x="100" y="38" text-anchor="middle" font-family="monospace" font-size="8">TXN-20260216-123456</text>
+          </svg>
+        </div>
         <div class="footer center">
           <div class="line"></div>
           ${s.receiptFooter ? `<div>${s.receiptFooter}</div>` : "<div>Thank you for your purchase!</div>"}
@@ -475,6 +570,16 @@ export default function SettingsPage() {
                   <span>$38.32</span>
                 </div>
                 <div className="border-t border-dashed border-gray-400 my-2" />
+                <div className="text-center my-2">
+                  <div className="inline-flex flex-col items-center">
+                    <div className="flex gap-px">
+                      {[2,1,3,1,2,1,3,2,1,2,3,1,2,1,3,2,1,2,3,1,2,1,3,2,1,3,2,1,3,2].map((w, i) => (
+                        <div key={i} className={`bg-black`} style={{ width: `${w}px`, height: '30px', display: i % 2 === 0 ? 'block' : 'none' }} />
+                      ))}
+                    </div>
+                    <div className="text-[9px] font-mono mt-0.5">TXN-20260216-123456</div>
+                  </div>
+                </div>
                 <div className="text-center mt-2">
                   {settings.receiptFooter || "Thank you for your purchase!"}
                 </div>
@@ -529,6 +634,119 @@ export default function SettingsPage() {
                     <p className="text-blue-200/70 text-sm">
                       Setting an admin password protects sensitive business data from unauthorized access.
                       A master code (default: 999999) allows recovery if you forget your password.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Software Update */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5 }}
+            className="bg-gray-800 rounded-lg p-6"
+          >
+            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <Download className="h-5 w-5 text-purple-400" />
+              Software Update
+            </h2>
+
+            <div className="space-y-4">
+              {/* Current Version Info */}
+              <div className="flex items-center justify-between p-4 bg-gray-900/50 rounded-lg border border-gray-700">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-purple-600/20">
+                    <Package className="h-5 w-5 text-purple-400" />
+                  </div>
+                  <div>
+                    <p className="font-medium">AzadiPOS v{currentVersion || "1.0.0"}</p>
+                    <p className="text-sm text-gray-400">
+                      {lastUpdate
+                        ? `Last updated: ${new Date(lastUpdate.timestamp).toLocaleDateString()} — ${lastUpdate.description}`
+                        : "No updates applied yet"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Update File Selection */}
+              <div className="p-4 bg-gray-900/50 rounded-lg border border-gray-700 space-y-3">
+                <p className="text-sm text-gray-300 font-medium">Apply Update</p>
+                <p className="text-xs text-gray-500">
+                  Select an update file (.zip or .azupdate) from USB drive or local storage.
+                  Updates will not affect your data — only application files are replaced.
+                </p>
+                <div className="flex items-center gap-3">
+                  <input
+                    ref={updateFileRef}
+                    type="file"
+                    accept=".zip,.azupdate"
+                    onChange={(e) => {
+                      setUpdateFile(e.target.files?.[0] || null);
+                      setUpdateResult(null);
+                    }}
+                    className="flex-1 text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-medium file:bg-purple-600 file:text-white hover:file:bg-purple-700 file:cursor-pointer"
+                  />
+                  <Button
+                    onClick={handleApplyUpdate}
+                    disabled={!updateFile || updating}
+                    className="bg-purple-600 hover:bg-purple-700 disabled:opacity-50"
+                  >
+                    {updating ? (
+                      <><LoadingSpinner size="sm" /> Applying...</>
+                    ) : (
+                      <><RefreshCw className="h-4 w-4 mr-2" /> Apply Update</>
+                    )}
+                  </Button>
+                </div>
+
+                {/* Update Result */}
+                {updateResult && (
+                  <div className={`p-3 rounded-lg border text-sm ${
+                    updateResult.success
+                      ? "bg-green-900/20 border-green-700/30 text-green-300"
+                      : "bg-red-900/20 border-red-700/30 text-red-300"
+                  }`}>
+                    <div className="flex items-start gap-2">
+                      {updateResult.success
+                        ? <CheckCircle2 className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                        : <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />}
+                      <span>{updateResult.message}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Update History */}
+              {updateHistory.length > 0 && (
+                <div className="p-4 bg-gray-900/50 rounded-lg border border-gray-700">
+                  <p className="text-sm text-gray-300 font-medium mb-2 flex items-center gap-2">
+                    <Clock className="h-4 w-4" /> Update History
+                  </p>
+                  <div className="space-y-2 max-h-40 overflow-y-auto">
+                    {[...updateHistory].reverse().map((entry, i) => (
+                      <div key={i} className="flex items-center justify-between text-xs text-gray-400 py-1 border-b border-gray-700/50 last:border-0">
+                        <span>{entry.description || entry.fileName}</span>
+                        <span className="text-gray-500">
+                          {new Date(entry.timestamp).toLocaleDateString()} — {entry.filesUpdated} files
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="p-4 bg-purple-900/20 border border-purple-700/30 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <Download className="h-5 w-5 text-purple-400 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-purple-200 font-medium">How Updates Work</p>
+                    <p className="text-purple-200/70 text-sm">
+                      Update files are provided as .zip packages. Connect a USB drive with the update file,
+                      select it above, and click Apply. Your inventory, transactions, and all business data
+                      are preserved — only the software code is updated. After applying, restart the application.
                     </p>
                   </div>
                 </div>

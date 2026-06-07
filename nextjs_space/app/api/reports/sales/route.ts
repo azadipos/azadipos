@@ -238,12 +238,12 @@ export async function GET(req: NextRequest) {
             taxableAmount: 0, 
             taxCollected: 0, 
             itemCount: 0,
-            categoryName: taxRate === 0 ? "Tax Exempt Items" : `${(taxRate * 100).toFixed(2)}% Rate Items`
+            categoryName: taxRate === 0 ? "Tax Exempt Items" : `${taxRate.toFixed(2)}% Rate Items`
           };
         }
         
         const lineSubtotal = item.lineTotal;
-        const lineTax = lineSubtotal * taxRate;
+        const lineTax = lineSubtotal * (taxRate / 100);
         
         taxByRate[rateKey].taxableAmount += lineSubtotal;
         taxByRate[rateKey].taxCollected += lineTax;
@@ -256,7 +256,7 @@ export async function GET(req: NextRequest) {
       .sort((a, b) => b.rate - a.rate)
       .map(entry => ({
         rate: entry.rate,
-        ratePercent: (entry.rate * 100).toFixed(2),
+        ratePercent: entry.rate.toFixed(2),
         taxableAmount: entry.taxableAmount,
         taxCollected: entry.taxCollected,
         itemCount: entry.itemCount,

@@ -103,7 +103,7 @@ export default function ReceivingPage() {
     
     // Check if cost or vendor is different
     const hasCostDifference = newCost !== undefined && item.cost > 0 && Math.abs(newCost - item.cost) > 0.001;
-    const hasVendorDifference = vendorId && item.vendorId && vendorId !== item.vendorId;
+    const hasVendorDifference = vendorId && (!item.vendorId || vendorId !== item.vendorId);
     
     const newItem: ReceiveItem = {
       itemId: currentItemId,
@@ -360,8 +360,10 @@ export default function ReceivingPage() {
               {receiveItems.map((item, idx) => {
                 const hasCostDiff = item.cost !== undefined && item.currentCost !== undefined && 
                                     item.currentCost > 0 && Math.abs(item.cost - item.currentCost) > 0.001;
-                const hasVendorDiff = vendorId && item.currentVendorName && 
-                                      vendors.find(v => v.id === vendorId)?.name !== item.currentVendorName;
+                const hasVendorDiff = vendorId && (
+                  !item.currentVendorName || 
+                  vendors.find(v => v.id === vendorId)?.name !== item.currentVendorName
+                );
                 const selectedVendorName = vendors.find(v => v.id === vendorId)?.name;
                 
                 return (
@@ -408,9 +410,13 @@ export default function ReceivingPage() {
                         <div className="flex items-center gap-2 text-sm text-blue-300">
                           <Building2 className="h-4 w-4 flex-shrink-0" />
                           <span>
-                            Different vendor: Current <strong>{item.currentVendorName}</strong>
-                            <ArrowRight className="h-3 w-3 inline mx-1" />
-                            New <strong>{selectedVendorName}</strong>
+                            {item.currentVendorName ? (
+                              <>Different vendor: Current <strong>{item.currentVendorName}</strong>
+                              <ArrowRight className="h-3 w-3 inline mx-1" />
+                              New <strong>{selectedVendorName}</strong></>
+                            ) : (
+                              <>No vendor assigned — assign <strong>{selectedVendorName}</strong></>
+                            )}
                           </span>
                         </div>
                         <label className="flex items-center gap-2 text-xs text-blue-200/70 mt-2 cursor-pointer">
@@ -420,7 +426,7 @@ export default function ReceivingPage() {
                             onChange={() => toggleUpdateVendor(idx)}
                             className="rounded bg-gray-800 border-gray-600"
                           />
-                          Update master item vendor to new vendor
+                          {item.currentVendorName ? 'Update master item vendor to new vendor' : 'Assign vendor to this item'}
                         </label>
                       </div>
                     )}
