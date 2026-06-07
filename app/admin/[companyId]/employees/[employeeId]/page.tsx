@@ -72,6 +72,7 @@ interface Shift {
   closingBalance: number | null;
   cashInjections: number;
   status: string;
+  closedBy?: { id: string; name: string } | null;
 }
 
 interface TransactionSummary {
@@ -86,7 +87,7 @@ interface TransactionSummary {
 }
 
 interface ShiftDetails {
-  shift: Shift & { employee: { name: string } };
+  shift: Shift & { employee: { name: string }; closedBy?: { id: string; name: string } | null };
   stats: {
     totalSales: number;
     totalRefunds: number;
@@ -95,6 +96,9 @@ interface ShiftDetails {
     refundCount: number;
     voidCount: number;
     averageTransactionValue: number;
+    cashSales: number;
+    cardSales: number;
+    splitSales: number;
     storeCreditCount: number;
     storeCreditTotal: number;
   };
@@ -572,6 +576,73 @@ export default function EmployeeStatsPage() {
                 <p className="text-2xl font-bold text-yellow-400">{formatCurrency(selectedShift.stats.storeCreditTotal)}</p>
                 <p className="text-xs text-gray-400">{selectedShift.stats.storeCreditCount} Credits</p>
               </div>
+            </div>
+            
+            {/* Cash Register Breakdown */}
+            <div className="p-4 bg-gray-800 rounded-lg">
+              <h4 className="font-medium mb-3 flex items-center gap-2">
+                <DollarSign className="h-4 w-4 text-green-400" />
+                Register Breakdown
+              </h4>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Cash Sales</span>
+                  <span className="font-mono text-emerald-400">{formatCurrency(selectedShift.stats.cashSales || 0)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Card Sales</span>
+                  <span className="font-mono text-blue-400">{formatCurrency(selectedShift.stats.cardSales || 0)}</span>
+                </div>
+                {(selectedShift.stats.splitSales || 0) > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Split Sales</span>
+                    <span className="font-mono text-purple-400">{formatCurrency(selectedShift.stats.splitSales)}</span>
+                  </div>
+                )}
+                <div className="border-t border-gray-700 pt-2 mt-2">
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Opening Balance</span>
+                    <span className="font-mono">{formatCurrency(selectedShift.shift.openingBalance || 0)}</span>
+                  </div>
+                  {(selectedShift.shift.cashInjections || 0) > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Cash Injections</span>
+                      <span className="font-mono text-blue-400">+{formatCurrency(selectedShift.shift.cashInjections)}</span>
+                    </div>
+                  )}
+                  {selectedShift.shift.closingBalance != null && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Closing Balance</span>
+                      <span className="font-mono">{formatCurrency(selectedShift.shift.closingBalance)}</span>
+                    </div>
+                  )}
+                  {selectedShift.shift.closingBalance != null && (
+                    <div className="flex justify-between font-medium mt-1">
+                      <span className="text-gray-300">Cash Variance</span>
+                      {(() => {
+                        const expected = (selectedShift.shift.openingBalance || 0) + (selectedShift.shift.cashInjections || 0) + (selectedShift.stats.cashSales || 0) - Math.abs(selectedShift.stats.totalRefunds || 0);
+                        const variance = selectedShift.shift.closingBalance - expected;
+                        return (
+                          <span className={`font-mono ${Math.abs(variance) < 0.01 ? 'text-green-400' : Math.abs(variance) <= 5 ? 'text-yellow-400' : 'text-red-400'}`}>
+                            {Math.abs(variance) < 0.01 ? 'Balanced' : variance > 0 ? `+${formatCurrency(variance)}` : `-${formatCurrency(Math.abs(variance))}`}
+                          </span>
+                        );
+                      })()}
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              {/* Manager who approved closing */}
+              {selectedShift.shift.closedBy && (
+                <div className="mt-3 pt-3 border-t border-gray-700">
+                  <div className="flex items-center gap-2 text-sm">
+                    <Shield className="h-4 w-4 text-purple-400" />
+                    <span className="text-gray-400">Closed by:</span>
+                    <span className="font-medium text-purple-300">{selectedShift.shift.closedBy.name}</span>
+                  </div>
+                </div>
+              )}
             </div>
             
             {/* Hourly Breakdown */}

@@ -12,6 +12,7 @@ export async function GET(
       where: { id: params.id },
       include: {
         employee: { select: { id: true, name: true } },
+        closedBy: { select: { id: true, name: true } },
       },
     });
     

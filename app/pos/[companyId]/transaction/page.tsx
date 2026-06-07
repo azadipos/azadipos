@@ -37,7 +37,9 @@ import {
   ShieldAlert,
   Award,
   Star,
+  XCircle,
 } from "lucide-react";
+import { readScale, isElectronHardwareAvailable } from "@/lib/hardware";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface CartItem {
@@ -182,6 +184,10 @@ export default function TransactionPage() {
   const [weightModalOpen, setWeightModalOpen] = useState(false);
   const [pendingWeightItem, setPendingWeightItem] = useState<SearchItem | null>(null);
   const [weightInput, setWeightInput] = useState("");
+  const [scaleReading, setScaleReading] = useState(false);
+  
+  // Clear cart confirmation
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   
   // Transaction info
   const [transactionDate] = useState(new Date());
@@ -308,7 +314,7 @@ export default function TransactionPage() {
   useEffect(() => {
     const focusInput = () => {
       // Don't refocus if any modal is open
-      if (!weightModalOpen && !customerModalOpen && !ageVerifyModalOpen && !rewardModalOpen && barcodeInputRef.current) {
+      if (!weightModalOpen && !customerModalOpen && !ageVerifyModalOpen && !rewardModalOpen && !clearConfirmOpen && barcodeInputRef.current) {
         barcodeInputRef.current.focus();
       }
     };
@@ -317,14 +323,14 @@ export default function TransactionPage() {
     
     // Refocus after any interaction, but only if modals are closed
     const handleClick = () => {
-      if (!weightModalOpen && !customerModalOpen && !ageVerifyModalOpen && !rewardModalOpen) {
+      if (!weightModalOpen && !customerModalOpen && !ageVerifyModalOpen && !rewardModalOpen && !clearConfirmOpen) {
         setTimeout(focusInput, 100);
       }
     };
     document.addEventListener("click", handleClick);
     
     return () => document.removeEventListener("click", handleClick);
-  }, [weightModalOpen, customerModalOpen, ageVerifyModalOpen, rewardModalOpen]);
+  }, [weightModalOpen, customerModalOpen, ageVerifyModalOpen, rewardModalOpen, clearConfirmOpen]);
   
   // Check for available rewards when customer is set
   const availableReward = useMemo(() => {
@@ -403,7 +409,30 @@ export default function TransactionPage() {
     setRewardDismissed(false);
     setError("");
     sessionStorage.removeItem("pos_cart_draft");
+    setClearConfirmOpen(false);
     barcodeInputRef.current?.focus();
+  };
+  
+  // Read weight from connected scale
+  const readScaleWeight = async () => {
+    setScaleReading(true);
+    try {
+      const reading = await readScale();
+      if (reading && reading.weight > 0) {
+        // Convert to lb if needed
+        let weightLb = reading.weight;
+        if (reading.unit === "kg") weightLb = reading.weight * 2.20462;
+        else if (reading.unit === "oz") weightLb = reading.weight / 16;
+        setWeightInput(weightLb.toFixed(3));
+      } else {
+        // No reading available
+        setError("Could not read scale. Place item on scale and try again.");
+      }
+    } catch {
+      setError("Scale communication error");
+    } finally {
+      setScaleReading(false);
+    }
   };
   
   // Search items - optimized with debounce, falls back to local cache offline
@@ -1174,10 +1203,10 @@ export default function TransactionPage() {
           {(cart.length > 0 || appliedStoreCredits.length > 0 || appliedGiftCards.length > 0 || customer) && (
             <Button
               variant="ghost"
-              onClick={clearTransaction}
+              onClick={() => setClearConfirmOpen(true)}
               className="text-red-400 hover:text-red-300 hover:bg-red-900/20"
             >
-              <Trash2 className="h-4 w-4 mr-2" />
+              <XCircle className="h-4 w-4 mr-2" />
               Clear
             </Button>
           )}
@@ -1534,6 +1563,22 @@ export default function TransactionPage() {
             <span className="text-xl text-gray-400 ml-2">lb</span>
           </div>
           
+          {/* Read from connected scale */}
+          {isElectronHardwareAvailable() && (
+            <Button
+              variant="pos"
+              className="w-full h-12 mb-3 border-yellow-600/50 hover:border-yellow-500"
+              onClick={readScaleWeight}
+              disabled={scaleReading}
+            >
+              {scaleReading ? (
+                <><LoadingSpinner size="sm" /> Reading Scale...</>
+              ) : (
+                <><Scale className="h-5 w-5 mr-2 text-yellow-400" /> Read from Scale</>
+              )}
+            </Button>
+          )}
+          
           <NumericKeypad
             onKeyPress={(key) => setWeightInput((prev) => prev + key)}
             onClear={() => setWeightInput("")}
@@ -1863,6 +1908,48 @@ export default function TransactionPage() {
           <p className="text-center text-gray-500 text-xs">
             You can apply this reward later by clicking the customer button
           </p>
+        </div>
+      </Modal>
+      
+      {/* Clear Cart Confirmation Modal */}
+      <Modal
+        isOpen={clearConfirmOpen}
+        onClose={() => setClearConfirmOpen(false)}
+        title="Clear Transaction"
+      >
+        <div className="space-y-4">
+          <div className="flex items-center justify-center gap-3 text-red-400 bg-red-500/10 p-4 rounded-lg">
+            <AlertTriangle className="h-8 w-8" />
+            <span className="text-lg font-medium">Are you sure?</span>
+          </div>
+          
+          <div className="bg-gray-800 rounded-lg p-4">
+            <p className="text-center text-gray-300">
+              This will remove <span className="font-bold text-white">{cart.length} item{cart.length !== 1 ? 's' : ''}</span> from the cart
+              {(appliedStoreCredits.length > 0 || appliedGiftCards.length > 0 || customer) && (
+                <>, along with any applied credits, gift cards, and customer association</>  
+              )}.
+            </p>
+            <p className="text-center text-red-400 text-sm mt-2 font-medium">
+              This action cannot be undone.
+            </p>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-3 pt-2">
+            <Button
+              variant="outline"
+              className="h-14 text-lg border-gray-600"
+              onClick={() => setClearConfirmOpen(false)}
+            >
+              Keep Items
+            </Button>
+            <Button
+              className="h-14 text-lg bg-red-600 hover:bg-red-700"
+              onClick={clearTransaction}
+            >
+              Clear All
+            </Button>
+          </div>
         </div>
       </Modal>
     </div>

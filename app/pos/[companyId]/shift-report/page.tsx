@@ -70,6 +70,7 @@ export default function ShiftReportPage() {
   const [managerBarcode, setManagerBarcode] = useState("");
   const [authError, setAuthError] = useState("");
   const [verifying, setVerifying] = useState(false);
+  const [closedByManager, setClosedByManager] = useState<string | null>(null);
   const barcodeInputRef = useRef<HTMLInputElement>(null);
   
   useEffect(() => {
@@ -181,12 +182,13 @@ export default function ShiftReportPage() {
       
       if (res.ok) {
         setShowAuthModal(false);
+        setClosedByManager(manager.name);
         setClosed(true);
         if (closeShift) closeShift();
         
         setTimeout(() => {
           router.push(`/pos/${companyId}/login`);
-        }, 3000);
+        }, 5000);
       } else {
         setAuthError("Failed to close shift");
       }
@@ -222,10 +224,50 @@ export default function ShiftReportPage() {
         <motion.div
           initial={{ scale: 0 }}
           animate={{ scale: 1 }}
-          className="text-center"
+          className="text-center max-w-md mx-auto"
         >
           <CheckCircle className="h-24 w-24 text-green-500 mx-auto mb-4" />
           <h1 className="text-3xl font-bold text-green-400">Shift Closed</h1>
+          
+          {/* Quick register summary */}
+          <div className="mt-6 p-4 bg-gray-800/50 border border-gray-700 rounded-lg text-left text-sm space-y-2">
+            <div className="flex justify-between">
+              <span className="text-gray-400">Total Sales</span>
+              <span className="text-green-400 font-mono">{formatCurrency(stats?.totalSales ?? 0)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-400">Cash Sales</span>
+              <span className="font-mono">{formatCurrency(stats?.cashSales ?? 0)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-400">Card Sales</span>
+              <span className="font-mono">{formatCurrency(stats?.cardSales ?? 0)}</span>
+            </div>
+            <div className="border-t border-gray-700 pt-2">
+              <div className="flex justify-between">
+                <span className="text-gray-400">Expected Cash</span>
+                <span className="font-mono text-yellow-400">{formatCurrency(expectedCash)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Counted Cash</span>
+                <span className="font-mono">{formatCurrency(parseFloat(closingBalance) || 0)}</span>
+              </div>
+              <div className="flex justify-between font-medium">
+                <span>Variance</span>
+                <span className={`font-mono ${Math.abs(variance) < 0.01 ? 'text-green-400' : Math.abs(variance) <= 5 ? 'text-yellow-400' : 'text-red-400'}`}>
+                  {Math.abs(variance) < 0.01 ? 'Balanced' : variance > 0 ? `+${formatCurrency(variance)}` : `-${formatCurrency(Math.abs(variance))}`}
+                </span>
+              </div>
+            </div>
+            {closedByManager && (
+              <div className="border-t border-gray-700 pt-2 flex items-center gap-2">
+                <Shield className="h-4 w-4 text-purple-400" />
+                <span className="text-gray-400">Approved by:</span>
+                <span className="text-purple-300 font-medium">{closedByManager}</span>
+              </div>
+            )}
+          </div>
+          
           <p className="text-gray-400 mt-4">Returning to login...</p>
         </motion.div>
       </div>

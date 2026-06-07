@@ -1,4 +1,6 @@
 import { formatCurrency } from "@/lib/helpers";
+import { printThermal, isElectronHardwareAvailable } from "@/lib/hardware";
+import type { CardPaymentResponse } from "@/lib/hardware";
 
 interface ReceiptData {
   companyName: string;
@@ -21,11 +23,19 @@ interface ReceiptData {
   customerName?: string | null;
   loyaltyPointsEarned?: number;
   loyaltyPointsRedeemed?: number;
+  // Card payment data from terminal
+  cardData?: {
+    cardType?: string;
+    lastFour?: string;
+    approvalCode?: string;
+    referenceNumber?: string;
+    entryMethod?: string;
+    cardholderName?: string;
+  } | null;
 }
 
 // Generate Code 128B barcode as SVG path data
 function generateCode128SVG(text: string): string {
-  // Code 128B encoding table (characters 0-94 map to ASCII 32-126)
   const CODE128B: number[][] = [
     [2,1,2,2,2,2],[2,2,2,1,2,2],[2,2,2,2,2,1],[1,2,1,2,2,3],[1,2,1,3,2,2],
     [1,3,1,2,2,2],[1,2,2,2,1,3],[1,2,2,3,1,2],[1,3,2,2,1,2],[2,2,1,2,1,3],
@@ -54,7 +64,6 @@ function generateCode128SVG(text: string): string {
   const STOP = [2,3,3,1,1,1,2];
   const START_B = 104;
   
-  // Encode
   const codes: number[][] = [];
   codes.push(CODE128B[START_B]);
   let checksum = START_B;
@@ -70,7 +79,6 @@ function generateCode128SVG(text: string): string {
   codes.push(CODE128B[checksum % 103]);
   codes.push(STOP);
   
-  // Convert to bars
   let bars = '';
   let x = 0;
   const barWidth = 2;
@@ -79,7 +87,7 @@ function generateCode128SVG(text: string): string {
   for (const code of codes) {
     for (let i = 0; i < code.length; i++) {
       const w = code[i] * barWidth;
-      if (i % 2 === 0) { // bar (black)
+      if (i % 2 === 0) {
         bars += `<rect x="${x}" y="0" width="${w}" height="${height}" fill="black"/>`;
       }
       x += w;
@@ -99,6 +107,25 @@ export function generateReceiptHtml(data: ReceiptData): string {
     const qtyLabel = item.isWeightItem ? `${item.quantity.toFixed(3)} lb` : `${item.quantity}`;
     return `<div class="item-row"><span>${item.name} x${qtyLabel}</span><span>${formatCurrency(item.lineTotal)}</span></div>`;
   }).join('');
+
+  // Build card payment info section
+  let cardInfoHtml = '';
+  if (data.cardData && data.cardData.lastFour) {
+    const cd = data.cardData;
+    const entryLabel = cd.entryMethod === 'tap' ? 'Contactless' :
+                       cd.entryMethod === 'chip' ? 'Chip' :
+                       cd.entryMethod === 'swipe' ? 'Swipe' :
+                       cd.entryMethod === 'manual' ? 'Manual' : (cd.entryMethod || '');
+    cardInfoHtml = `
+      <div class="line"></div>
+      <div class="center bold">CARD PAYMENT</div>
+      <div class="item-row"><span>Card:</span><span>${cd.cardType || 'Card'} ****${cd.lastFour}</span></div>
+      ${entryLabel ? `<div class="item-row"><span>Entry:</span><span>${entryLabel}</span></div>` : ''}
+      ${cd.approvalCode ? `<div class="item-row"><span>Approval:</span><span>${cd.approvalCode}</span></div>` : ''}
+      ${cd.referenceNumber ? `<div class="item-row"><span>Ref #:</span><span>${cd.referenceNumber}</span></div>` : ''}
+      ${cd.cardholderName ? `<div class="item-row"><span>Name:</span><span>${cd.cardholderName}</span></div>` : ''}
+    `;
+  }
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Receipt</title>
 <style>
@@ -138,6 +165,7 @@ export function generateReceiptHtml(data: ReceiptData): string {
   <div class="item-row"><span>Payment: ${data.paymentMethod.charAt(0).toUpperCase() + data.paymentMethod.slice(1)}</span></div>
   ${data.cashGiven ? `<div class="item-row"><span>Cash Given:</span><span>${formatCurrency(data.cashGiven)}</span></div>` : ''}
   ${data.changeDue && data.changeDue > 0 ? `<div class="item-row bold"><span>Change:</span><span>${formatCurrency(data.changeDue)}</span></div>` : ''}
+  ${cardInfoHtml}
   ${(data.loyaltyPointsEarned ?? 0) > 0 ? `<div style="margin-top:6px;text-align:center;font-size:10px;">⭐ You earned ${data.loyaltyPointsEarned} loyalty points!</div>` : ''}
   ${(data.loyaltyPointsRedeemed ?? 0) > 0 ? `<div style="text-align:center;font-size:10px;">🎁 ${data.loyaltyPointsRedeemed} points redeemed</div>` : ''}
   <div class="barcode">${barcodeSvg}</div>
@@ -148,8 +176,27 @@ export function generateReceiptHtml(data: ReceiptData): string {
 </body></html>`;
 }
 
-export function printReceipt(data: ReceiptData) {
+/**
+ * Print a receipt. Uses silent thermal printing in Electron, falls back to browser print dialog.
+ */
+export async function printReceipt(data: ReceiptData): Promise<void> {
   const html = generateReceiptHtml(data);
+  
+  if (isElectronHardwareAvailable()) {
+    // Silent thermal printing – no browser dialog
+    const result = await printThermal({ html, silent: true, width: 80 });
+    if (!result.success) {
+      console.error('Thermal print failed, falling back to browser print:', result.error);
+      browserPrint(html);
+    }
+    return;
+  }
+  
+  // Browser fallback
+  browserPrint(html);
+}
+
+function browserPrint(html: string) {
   const printWindow = window.open('', '_blank');
   if (!printWindow) return;
   printWindow.document.write(html);

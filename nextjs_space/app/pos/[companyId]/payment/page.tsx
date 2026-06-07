@@ -7,8 +7,10 @@ import { NumericKeypad } from "@/components/numeric-keypad";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { usePOS } from "@/lib/pos-context";
 import { formatCurrency } from "@/lib/helpers";
-import { ArrowLeft, CreditCard, Banknote, CheckCircle, SplitSquareVertical, Printer } from "lucide-react";
+import { ArrowLeft, CreditCard, Banknote, CheckCircle, SplitSquareVertical, Printer, XCircle, AlertTriangle, RefreshCw, Wifi } from "lucide-react";
 import { printReceipt } from "@/lib/receipt";
+import { sendCardPayment, cancelCardPayment, isElectronHardwareAvailable } from "@/lib/hardware";
+import type { CardPaymentResponse } from "@/lib/hardware";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface CartData {
@@ -37,11 +39,19 @@ export default function PaymentPage() {
   const [error, setError] = useState("");
   const [completedTxn, setCompletedTxn] = useState<any>(null);
   
+  // Card terminal state
+  const [cardStatus, setCardStatus] = useState<"idle" | "sending" | "waiting" | "approved" | "declined" | "error">("idle");
+  const [cardResponse, setCardResponse] = useState<CardPaymentResponse | null>(null);
+  const [terminalConnected] = useState(() => isElectronHardwareAvailable());
+  
   // Split payment state
   const [splitStep, setSplitStep] = useState<1 | 2>(1);
   const [splitPayment1, setSplitPayment1] = useState<{ method: "cash" | "card"; amount: number } | null>(null);
   const [splitAmount1, setSplitAmount1] = useState("");
   const [splitMethod1, setSplitMethod1] = useState<"cash" | "card">("cash");
+  
+  // Store card data for receipt
+  const [savedCardData, setSavedCardData] = useState<CardPaymentResponse | null>(null);
   
   useEffect(() => {
     if (!employee) {
@@ -75,29 +85,90 @@ export default function PaymentPage() {
     setCashGiven(amount.toString());
   };
   
-  const canComplete = paymentMethod === "card" || cashGivenAmount >= total;
+  // Send payment to card terminal
+  const initiateCardPayment = async (amount?: number) => {
+    const payAmount = amount || total;
+    setCardStatus("sending");
+    setCardResponse(null);
+    setError("");
+    
+    try {
+      setCardStatus("waiting");
+      const response = await sendCardPayment({
+        amount: payAmount,
+        transactionId: cartData?.transactionId || "",
+      });
+      
+      setCardResponse(response);
+      
+      if (response.success && response.approved) {
+        setCardStatus("approved");
+        setSavedCardData(response);
+        return response;
+      } else {
+        setCardStatus("declined");
+        return response;
+      }
+    } catch (err: any) {
+      setCardStatus("error");
+      setCardResponse({ success: false, approved: false, error: err?.message || "Terminal error" });
+      return null;
+    }
+  };
   
-  const completeTransaction = async () => {
-    if (!canComplete || !cartData) return;
+  // Handle card payment complete flow
+  const handleCardPayment = async () => {
+    const response = await initiateCardPayment();
+    if (response?.approved) {
+      // Auto-complete transaction after approval
+      await completeTransaction("card", response);
+    }
+  };
+  
+  // Retry card payment
+  const retryCardPayment = () => {
+    setCardStatus("idle");
+    setCardResponse(null);
+    setError("");
+  };
+  
+  // Switch from declined card to different payment method
+  const changePaymentMethod = () => {
+    setPaymentMethod(null);
+    setCardStatus("idle");
+    setCardResponse(null);
+    setError("");
+  };
+  
+  const completeTransaction = async (method?: string, cardResp?: CardPaymentResponse | null) => {
+    if (!cartData) return;
+    
+    const effectiveMethod = method || paymentMethod;
+    const effectiveCardData = cardResp || savedCardData;
     
     setProcessing(true);
     setError("");
     
     try {
-      // Filter out gift card items from regular items (they start with "gc-")
       const regularItems = (cartData.items ?? []).filter((item) => !item?.id?.startsWith("gc-"));
       const giftCardItemsToSell = (cartData.items ?? []).filter((item) => item?.id?.startsWith("gc-"));
       
       const transactionData = {
         employeeId: employee?.id,
         shiftId: shiftId,
-        paymentMethod,
-        cashGiven: paymentMethod === "cash" ? cashGivenAmount : null,
+        paymentMethod: effectiveMethod,
+        cashGiven: effectiveMethod === "cash" ? cashGivenAmount : null,
         storeCreditApplied: cartData.totals?.storeCreditTotal || 0,
         giftCardApplied: cartData.totals?.giftCardTotal || 0,
         customerId: cartData.customer?.id || null,
         loyaltyPointsRedeemed: cartData.appliedReward?.pointsRedeemed || 0,
         loyaltyRewardDiscount: cartData.appliedReward?.discount || 0,
+        // Card terminal data
+        cardType: effectiveCardData?.cardType || null,
+        cardLastFour: effectiveCardData?.lastFour || null,
+        cardApprovalCode: effectiveCardData?.approvalCode || null,
+        cardEntryMethod: effectiveCardData?.entryMethod || null,
+        cardReferenceNumber: effectiveCardData?.referenceNumber || null,
         items: regularItems.map((item) => ({
           itemId: item?.itemId,
           itemName: item?.name,
@@ -105,7 +176,6 @@ export default function PaymentPage() {
           unitPrice: item?.price,
           isWeightItem: item?.isWeightPriced,
         })),
-        // Include gift card sales as separate items
         giftCardSales: giftCardItemsToSell.map((gc) => ({
           giftCardId: gc?.itemId,
           amount: gc?.price,
@@ -125,17 +195,14 @@ export default function PaymentPage() {
       
       const txn = await res.json();
       
-      // Redeem any applied store credits
+      // Redeem applied store credits
       if (cartData.appliedStoreCredits && cartData.appliedStoreCredits.length > 0) {
         for (const credit of cartData.appliedStoreCredits) {
           try {
             await fetch("/api/store-credits/redeem", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                barcode: credit.barcode,
-                transactionId: txn.id,
-              }),
+              body: JSON.stringify({ barcode: credit.barcode, transactionId: txn.id }),
             });
           } catch (err) {
             console.error("Failed to redeem store credit:", credit.barcode, err);
@@ -143,7 +210,7 @@ export default function PaymentPage() {
         }
       }
       
-      // Redeem any applied gift cards (deduct from their balance)
+      // Redeem applied gift cards
       if (cartData.appliedGiftCards && cartData.appliedGiftCards.length > 0) {
         for (const giftCard of cartData.appliedGiftCards) {
           try {
@@ -152,7 +219,7 @@ export default function PaymentPage() {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 barcode: giftCard.barcode,
-                amount: Math.min(giftCard.amount, total + (cartData.totals?.giftCardTotal || 0)), // Don't redeem more than needed
+                amount: Math.min(giftCard.amount, total + (cartData.totals?.giftCardTotal || 0)),
                 transactionId: txn.id,
               }),
             });
@@ -162,16 +229,14 @@ export default function PaymentPage() {
         }
       }
       
-      // Mark sold gift cards as purchased
+      // Activate sold gift cards
       if (giftCardItemsToSell.length > 0) {
         for (const gc of giftCardItemsToSell) {
           try {
             await fetch(`/api/gift-cards/${gc.itemId}/activate`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                transactionId: txn.id,
-              }),
+              body: JSON.stringify({ transactionId: txn.id }),
             });
           } catch (err) {
             console.error("Failed to activate gift card:", gc.itemId, err);
@@ -185,39 +250,40 @@ export default function PaymentPage() {
       setCompletedTxn(txn);
       setSuccess(true);
       
-      // Auto-print receipt
+      // Auto-print receipt with card data
       try {
         const companyRes = await fetch(`/api/companies/${companyId}/settings`);
         const company = companyRes.ok ? await companyRes.json() : { name: 'Store' };
         printReceipt({
           companyName: company.name || 'Store',
-          address: company.address,
-          phone: company.phone,
-          logoUrl: company.logoUrl,
-          receiptHeader: company.receiptHeader,
-          receiptFooter: company.receiptFooter,
+          address: company.address, phone: company.phone,
+          logoUrl: company.logoUrl, receiptHeader: company.receiptHeader, receiptFooter: company.receiptFooter,
           transactionNumber: txn.transactionNumber,
           date: new Date().toLocaleString(),
           cashierName: txn.employee?.name || employee?.name || 'Staff',
           items: (txn.items || []).map((i: any) => ({
             name: i.itemName, quantity: i.quantity, unitPrice: i.unitPrice, lineTotal: i.lineTotal, isWeightItem: i.isWeightItem,
           })),
-          subtotal: txn.subtotal,
-          tax: txn.tax,
-          total: txn.total,
+          subtotal: txn.subtotal, tax: txn.tax, total: txn.total,
           loyaltyRewardDiscount: txn.loyaltyRewardDiscount || 0,
-          paymentMethod: txn.paymentMethod || paymentMethod || 'cash',
-          cashGiven: txn.cashGiven,
-          changeDue: txn.changeDue,
+          paymentMethod: txn.paymentMethod || effectiveMethod || 'cash',
+          cashGiven: txn.cashGiven, changeDue: txn.changeDue,
           customerName: cartData.customer?.name,
           loyaltyPointsEarned: txn.loyaltyPointsEarned,
           loyaltyPointsRedeemed: txn.loyaltyPointsRedeemed,
+          cardData: effectiveCardData ? {
+            cardType: effectiveCardData.cardType,
+            lastFour: effectiveCardData.lastFour,
+            approvalCode: effectiveCardData.approvalCode,
+            referenceNumber: effectiveCardData.referenceNumber,
+            entryMethod: effectiveCardData.entryMethod,
+            cardholderName: effectiveCardData.cardholderName,
+          } : null,
         });
       } catch (printErr) {
         console.error('Receipt print failed:', printErr);
       }
       
-      // Wait a moment to show success, then redirect
       setTimeout(() => {
         router.push(`/pos/${companyId}/transaction`);
       }, 4000);
@@ -246,6 +312,17 @@ export default function PaymentPage() {
               Change Due: <span className="text-yellow-400 font-bold">{formatCurrency(changeDue)}</span>
             </p>
           )}
+          
+          {/* Show card info on success screen */}
+          {savedCardData && savedCardData.lastFour && (
+            <div className="mt-4 p-3 bg-blue-900/20 border border-blue-600/30 rounded-lg inline-block">
+              <p className="text-blue-400 text-sm">
+                {savedCardData.cardType || 'Card'} ****{savedCardData.lastFour}
+                {savedCardData.approvalCode && ` • Auth: ${savedCardData.approvalCode}`}
+              </p>
+            </div>
+          )}
+          
           <Button
             variant="outline"
             className="mt-6 gap-2"
@@ -264,9 +341,19 @@ export default function PaymentPage() {
                       items: (completedTxn.items || []).map((i: any) => ({ name: i.itemName, quantity: i.quantity, unitPrice: i.unitPrice, lineTotal: i.lineTotal, isWeightItem: i.isWeightItem })),
                       subtotal: completedTxn.subtotal, tax: completedTxn.tax, total: completedTxn.total,
                       loyaltyRewardDiscount: completedTxn.loyaltyRewardDiscount || 0,
-                      paymentMethod: completedTxn.paymentMethod, cashGiven: completedTxn.cashGiven, changeDue: completedTxn.changeDue,
+                      paymentMethod: completedTxn.paymentMethod,
+                      cashGiven: completedTxn.cashGiven, changeDue: completedTxn.changeDue,
                       customerName: cartData.customer?.name,
-                      loyaltyPointsEarned: completedTxn.loyaltyPointsEarned, loyaltyPointsRedeemed: completedTxn.loyaltyPointsRedeemed,
+                      loyaltyPointsEarned: completedTxn.loyaltyPointsEarned,
+                      loyaltyPointsRedeemed: completedTxn.loyaltyPointsRedeemed,
+                      cardData: savedCardData ? {
+                        cardType: savedCardData.cardType,
+                        lastFour: savedCardData.lastFour,
+                        approvalCode: savedCardData.approvalCode,
+                        referenceNumber: savedCardData.referenceNumber,
+                        entryMethod: savedCardData.entryMethod,
+                        cardholderName: savedCardData.cardholderName,
+                      } : null,
                     });
                   });
               }
@@ -404,8 +491,8 @@ export default function PaymentPage() {
                 <Button
                   variant="pos-success"
                   className="flex-1 h-14"
-                  disabled={!canComplete || processing}
-                  onClick={completeTransaction}
+                  disabled={cashGivenAmount < total || processing}
+                  onClick={() => completeTransaction("cash")}
                 >
                   {processing ? <LoadingSpinner size="sm" /> : "DONE"}
                 </Button>
@@ -421,34 +508,158 @@ export default function PaymentPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="w-full text-center"
+              className="w-full"
             >
-              <div className="p-8 bg-pos-card border border-pos-border rounded-lg mb-6">
-                <CreditCard className="h-16 w-16 text-blue-400 mx-auto mb-4" />
-                <p className="text-xl text-gray-300">Follow instructions on Pin Pad</p>
-                <p className="text-gray-500 mt-2">Amount: {formatCurrency(total)}</p>
-                <p className="text-xs text-gray-600 mt-4">
-                  (In production, this will communicate with the Ingenico terminal)
-                </p>
-              </div>
+              {/* Idle - ready to send */}
+              {cardStatus === "idle" && (
+                <div className="text-center">
+                  <div className="p-8 bg-pos-card border border-pos-border rounded-lg mb-6">
+                    <CreditCard className="h-16 w-16 text-blue-400 mx-auto mb-4" />
+                    <p className="text-xl text-gray-300">Card Payment</p>
+                    <p className="text-gray-500 mt-2">Amount: {formatCurrency(total)}</p>
+                    {terminalConnected && (
+                      <div className="mt-3 flex items-center justify-center gap-2 text-green-400 text-sm">
+                        <Wifi className="h-4 w-4" />
+                        <span>Terminal Connected</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex gap-4">
+                    <Button
+                      variant="outline"
+                      className="flex-1 h-14 border-gray-600 text-gray-300"
+                      onClick={() => setPaymentMethod(null)}
+                    >
+                      Back
+                    </Button>
+                    <Button
+                      variant="pos-success"
+                      className="flex-1 h-14"
+                      onClick={handleCardPayment}
+                    >
+                      {terminalConnected ? "Send to Terminal" : "Payment Received"}
+                    </Button>
+                  </div>
+                </div>
+              )}
               
-              <div className="flex gap-4">
-                <Button
-                  variant="outline"
-                  className="flex-1 h-14 border-gray-600 text-gray-300"
-                  onClick={() => setPaymentMethod(null)}
-                >
-                  Back
-                </Button>
-                <Button
-                  variant="pos-success"
-                  className="flex-1 h-14"
-                  disabled={processing}
-                  onClick={completeTransaction}
-                >
-                  {processing ? <LoadingSpinner size="sm" /> : "Payment Received"}
-                </Button>
-              </div>
+              {/* Sending / Waiting for terminal response */}
+              {(cardStatus === "sending" || cardStatus === "waiting") && (
+                <div className="text-center">
+                  <div className="p-8 bg-pos-card border border-blue-500/30 rounded-lg mb-6">
+                    <div className="relative">
+                      <CreditCard className="h-16 w-16 text-blue-400 mx-auto mb-4 animate-pulse" />
+                    </div>
+                    <p className="text-xl text-blue-300 font-medium">Processing Payment...</p>
+                    <p className="text-gray-400 mt-2">{formatCurrency(total)}</p>
+                    <p className="text-sm text-gray-500 mt-4">
+                      {cardStatus === "sending" ? "Sending to terminal..." : "Waiting for customer to complete payment..."}
+                    </p>
+                    <div className="mt-4"><LoadingSpinner size="lg" /></div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    className="w-full h-12 border-red-600/50 text-red-400 hover:bg-red-900/20"
+                    onClick={async () => {
+                      await cancelCardPayment();
+                      setCardStatus("idle");
+                      setCardResponse(null);
+                    }}
+                  >
+                    Cancel Payment
+                  </Button>
+                </div>
+              )}
+              
+              {/* Approved */}
+              {cardStatus === "approved" && cardResponse && (
+                <div className="text-center">
+                  <div className="p-8 bg-green-900/20 border border-green-600/30 rounded-lg mb-6">
+                    <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
+                    <p className="text-xl text-green-400 font-bold">APPROVED</p>
+                    <div className="mt-4 space-y-1 text-sm">
+                      {cardResponse.cardType && (
+                        <p className="text-gray-300">{cardResponse.cardType} ****{cardResponse.lastFour}</p>
+                      )}
+                      {cardResponse.approvalCode && (
+                        <p className="text-gray-400">Auth: {cardResponse.approvalCode}</p>
+                      )}
+                      {cardResponse.entryMethod && (
+                        <p className="text-gray-500 capitalize">{cardResponse.entryMethod}</p>
+                      )}
+                    </div>
+                  </div>
+                  {processing && (
+                    <div className="flex items-center justify-center gap-2 text-gray-400">
+                      <LoadingSpinner size="sm" />
+                      <span>Completing transaction...</span>
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {/* Declined */}
+              {cardStatus === "declined" && cardResponse && (
+                <div className="text-center">
+                  <div className="p-8 bg-red-900/20 border border-red-600/30 rounded-lg mb-6">
+                    <XCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+                    <p className="text-xl text-red-400 font-bold">DECLINED</p>
+                    {cardResponse.declineReason && (
+                      <p className="text-red-300 mt-2">{cardResponse.declineReason}</p>
+                    )}
+                    {cardResponse.error && (
+                      <p className="text-red-300 mt-2">{cardResponse.error}</p>
+                    )}
+                  </div>
+                  <div className="space-y-3">
+                    <Button
+                      variant="pos"
+                      className="w-full h-14 border-blue-500/50 hover:border-blue-400"
+                      onClick={retryCardPayment}
+                    >
+                      <RefreshCw className="h-5 w-5 mr-2" />
+                      Try Again
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="w-full h-12 border-gray-600 text-gray-300"
+                      onClick={changePaymentMethod}
+                    >
+                      Choose Different Payment Method
+                    </Button>
+                  </div>
+                </div>
+              )}
+              
+              {/* Terminal Error */}
+              {cardStatus === "error" && (
+                <div className="text-center">
+                  <div className="p-8 bg-orange-900/20 border border-orange-600/30 rounded-lg mb-6">
+                    <AlertTriangle className="h-16 w-16 text-orange-500 mx-auto mb-4" />
+                    <p className="text-xl text-orange-400 font-bold">Terminal Error</p>
+                    <p className="text-gray-400 mt-2">
+                      {cardResponse?.error || "Could not communicate with card terminal"}
+                    </p>
+                  </div>
+                  <div className="space-y-3">
+                    <Button
+                      variant="pos"
+                      className="w-full h-14 border-blue-500/50"
+                      onClick={retryCardPayment}
+                    >
+                      <RefreshCw className="h-5 w-5 mr-2" />
+                      Retry
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="w-full h-12 border-gray-600 text-gray-300"
+                      onClick={changePaymentMethod}
+                    >
+                      Choose Different Payment Method
+                    </Button>
+                  </div>
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -557,7 +768,6 @@ export default function PaymentPage() {
                   <div className="grid grid-cols-2 gap-2 mb-4">
                     <button
                       onClick={() => {
-                        // Process cash for remaining
                         setCashGiven((total - splitPayment1.amount).toString());
                       }}
                       className="p-4 rounded-lg border border-gray-700 hover:border-green-500 flex flex-col items-center gap-2"
@@ -567,7 +777,6 @@ export default function PaymentPage() {
                     </button>
                     <button
                       onClick={async () => {
-                        // Process card for remaining - complete transaction
                         setProcessing(true);
                         try {
                           const transactionData = {
@@ -596,6 +805,7 @@ export default function PaymentPage() {
                           if (!res.ok) throw new Error("Failed");
                           
                           sessionStorage.removeItem("pos_cart");
+                          sessionStorage.removeItem("pos_cart_draft");
                           setSuccess(true);
                           setTimeout(() => router.push(`/pos/${companyId}/transaction`), 2000);
                         } catch (err) {
@@ -660,6 +870,7 @@ export default function PaymentPage() {
                             if (!res.ok) throw new Error("Failed");
                             
                             sessionStorage.removeItem("pos_cart");
+                            sessionStorage.removeItem("pos_cart_draft");
                             setSuccess(true);
                             setTimeout(() => router.push(`/pos/${companyId}/transaction`), 2000);
                           } catch (err) {

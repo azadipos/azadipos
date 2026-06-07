@@ -21,6 +21,12 @@ export async function GET(
             isManager: true,
           },
         },
+        closedBy: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
       },
     });
     
@@ -72,18 +78,24 @@ export async function GET(
       refundCount: 0,
       voidCount: 0,
       averageTransactionValue: 0,
+      cashSales: 0,
+      cardSales: 0,
+      splitSales: 0,
       storeCreditCount: storeCredits.length,
-      storeCreditTotal: storeCredits.reduce((sum: number, sc: any) => sum + sc.amount, 0),
+      storeCreditTotal: storeCredits.reduce((sum, sc) => sum + sc.amount, 0),
     };
     
-    transactions.forEach((txn: any) => {
-      if (txn.type === "sale") {
+    transactions.forEach((txn) => {
+      if (txn.type === "sale" && txn.status !== "deleted") {
         stats.totalSales += txn.total;
         stats.saleCount++;
+        if (txn.paymentMethod === "cash") stats.cashSales += txn.total;
+        else if (txn.paymentMethod === "card") stats.cardSales += txn.total;
+        else if (txn.paymentMethod === "split") stats.splitSales += txn.total;
       } else if (txn.type === "refund") {
         stats.totalRefunds += Math.abs(txn.total);
         stats.refundCount++;
-      } else if (txn.type === "void") {
+      } else if (txn.type === "void" || txn.status === "deleted") {
         stats.totalVoids += Math.abs(txn.total);
         stats.voidCount++;
       }
@@ -102,9 +114,9 @@ export async function GET(
       transactionId?: string;
     }> = [];
     
-    transactions.forEach((txn: any) => {
+    transactions.forEach((txn) => {
       if (txn.type === "refund" || txn.type === "void") {
-        const items = txn.items.map((i: any) => i.item?.name || "Unknown").join(", ");
+        const items = txn.items.map((i) => i.item?.name || "Unknown").join(", ");
         sensitiveActions.push({
           type: txn.type,
           timestamp: txn.createdAt,
@@ -115,7 +127,7 @@ export async function GET(
       }
     });
     
-    storeCredits.forEach((sc: any) => {
+    storeCredits.forEach((sc) => {
       sensitiveActions.push({
         type: "store_credit",
         timestamp: sc.createdAt,
@@ -131,7 +143,7 @@ export async function GET(
     
     // Hourly breakdown of transactions
     const hourlyBreakdown: { [hour: string]: { sales: number; refunds: number; count: number } } = {};
-    transactions.forEach((txn: any) => {
+    transactions.forEach((txn) => {
       const hour = new Date(txn.createdAt).getHours();
       const hourKey = `${hour}:00`;
       if (!hourlyBreakdown[hourKey]) {
@@ -148,7 +160,7 @@ export async function GET(
     return NextResponse.json({
       shift,
       stats,
-      transactions: transactions.map((t: any) => ({
+      transactions: transactions.map((t) => ({
         id: t.id,
         transactionNumber: t.transactionNumber,
         type: t.type,
@@ -160,7 +172,7 @@ export async function GET(
       sensitiveActions,
       hourlyBreakdown: Object.entries(hourlyBreakdown)
         .sort((a, b) => parseInt(a[0]) - parseInt(b[0]))
-        .map(([hour, data]: [string, any]) => ({ hour, ...data })),
+        .map(([hour, data]) => ({ hour, ...data })),
       storeCredits,
     });
   } catch (error) {
