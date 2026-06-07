@@ -68,7 +68,7 @@ export async function GET(req: NextRequest) {
         
         // Calculate cost for profit
         t.items.forEach((item) => {
-          const itemCost = item.item.cost || 0;
+          const itemCost = item.item?.cost || 0;
           summary.totalCost += itemCost * item.quantity;
         });
       } else if (t.type === "refund") {
@@ -77,7 +77,7 @@ export async function GET(req: NextRequest) {
         
         // Subtract cost for refunded items
         t.items.forEach((item) => {
-          const itemCost = item.item.cost || 0;
+          const itemCost = item.item?.cost || 0;
           summary.totalCost -= itemCost * item.quantity;
         });
       } else if (t.type === "void" || t.status === "deleted") {
@@ -122,12 +122,12 @@ export async function GET(req: NextRequest) {
           grouped[key].count++;
           grouped[key].tax += t.tax;
           t.items.forEach((item) => {
-            grouped[key].cost += (item.item.cost || 0) * item.quantity;
+            grouped[key].cost += (item.item?.cost || 0) * item.quantity;
           });
         } else if (t.type === "refund") {
           grouped[key].refunds += Math.abs(t.total);
           t.items.forEach((item) => {
-            grouped[key].cost -= (item.item.cost || 0) * item.quantity;
+            grouped[key].cost -= (item.item?.cost || 0) * item.quantity;
           });
         }
       });
@@ -148,7 +148,7 @@ export async function GET(req: NextRequest) {
         if (t.type !== "sale" || t.status === "deleted") return;
         
         t.items.forEach((item) => {
-          const cat = item.item.category;
+          const cat = item.item?.category;
           const catId = cat?.id || "uncategorized";
           const catName = cat?.name || "Uncategorized";
           
@@ -157,7 +157,7 @@ export async function GET(req: NextRequest) {
           }
           
           grouped[catId].sales += item.lineTotal;
-          grouped[catId].cost += (item.item.cost || 0) * item.quantity;
+          grouped[catId].cost += (item.item?.cost || 0) * item.quantity;
           grouped[catId].quantity += item.quantity;
           grouped[catId].count++;
         });
@@ -208,7 +208,7 @@ export async function GET(req: NextRequest) {
         }
         itemSales[item.itemId].quantity += item.quantity;
         itemSales[item.itemId].revenue += item.lineTotal;
-        itemSales[item.itemId].cost += (item.item.cost || 0) * item.quantity;
+        itemSales[item.itemId].cost += (item.item?.cost || 0) * item.quantity;
       });
     });
     
@@ -228,9 +228,9 @@ export async function GET(req: NextRequest) {
       if (t.type !== "sale" || t.status === "deleted") return;
       
       t.items.forEach((item) => {
-        const taxRate = item.item.category?.taxRate || 0;
+        const taxRate = item.item?.category?.taxRate || 0;
         const rateKey = taxRate.toFixed(3); // Use 3 decimal places as key
-        const categoryName = item.item.category?.name || "No Category (Tax Exempt)";
+        const categoryName = item.item?.category?.name || "No Category (Tax Exempt)";
         
         if (!taxByRate[rateKey]) {
           taxByRate[rateKey] = { 
@@ -270,8 +270,11 @@ export async function GET(req: NextRequest) {
       taxBreakdown,
       transactionCount: transactions.length,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error generating sales report:", error);
-    return NextResponse.json({ error: "Failed to generate report" }, { status: 500 });
+    return NextResponse.json({ 
+      error: `Failed to generate report: ${error?.message || 'Unknown error'}`,
+      details: String(error),
+    }, { status: 500 });
   }
 }

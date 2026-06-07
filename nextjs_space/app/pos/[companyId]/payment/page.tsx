@@ -179,8 +179,9 @@ export default function PaymentPage() {
         }
       }
       
-      // Clear cart
+      // Clear cart and draft
       sessionStorage.removeItem("pos_cart");
+      sessionStorage.removeItem("pos_cart_draft");
       setCompletedTxn(txn);
       setSuccess(true);
       

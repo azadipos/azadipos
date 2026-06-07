@@ -8,13 +8,17 @@ import {
   WifiOff,
   Clock,
   HardDrive,
-  Cpu,
   Activity,
   RefreshCw,
   CheckCircle2,
   XCircle,
   User,
   ArrowUpCircle,
+  Database,
+  Copy,
+  Eye,
+  EyeOff,
+  Network,
 } from "lucide-react";
 
 interface TerminalInfo {
@@ -38,10 +42,20 @@ interface ServerInfo {
   hostname: string;
   platform: string;
   memoryUsage: {
-    total: number;
-    free: number;
-    used: number;
+    totalMB: number;
+    freeMB: number;
+    usedMB: number;
+    totalGB: string;
   };
+  lanIPs: string[];
+  connectionInfo: {
+    host: string;
+    port: string;
+    database: string;
+    username: string;
+    password: string;
+    connectionString: string;
+  } | null;
   nodeVersion: string;
   serverTime: string;
 }
@@ -59,6 +73,8 @@ export default function ServerStatusPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -85,7 +101,7 @@ export default function ServerStatusPage() {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 10000); // refresh every 10s
+    const interval = setInterval(fetchData, 10000);
     return () => clearInterval(interval);
   }, [fetchData]);
 
@@ -101,12 +117,18 @@ export default function ServerStatusPage() {
   const formatLastSeen = (seconds: number) => {
     if (seconds < 5) return "just now";
     if (seconds < 60) return `${seconds}s ago`;
-    const m = Math.floor(seconds / 60);
-    return `${m}m ago`;
+    return `${Math.floor(seconds / 60)}m ago`;
+  };
+
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(label);
+      setTimeout(() => setCopied(null), 2000);
+    });
   };
 
   const memPercent = serverInfo
-    ? Math.round((serverInfo.memoryUsage.used / serverInfo.memoryUsage.total) * 100)
+    ? Math.round((serverInfo.memoryUsage.usedMB / serverInfo.memoryUsage.totalMB) * 100)
     : 0;
 
   if (loading) {
@@ -149,7 +171,7 @@ export default function ServerStatusPage() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-8 space-y-8">
+      <main className="max-w-6xl mx-auto px-6 py-8 space-y-6">
         {error && (
           <div className="bg-red-900/30 border border-red-800 rounded-xl p-4 flex items-center gap-3">
             <XCircle className="h-5 w-5 text-red-400 flex-shrink-0" />
@@ -199,9 +221,11 @@ export default function ServerStatusPage() {
               <div className="bg-gray-800/50 rounded-xl p-4">
                 <div className="flex items-center gap-2 text-gray-400 text-sm mb-1">
                   <HardDrive className="h-4 w-4" />
-                  Memory
+                  System RAM
                 </div>
-                <p className="text-lg font-semibold">{serverInfo.memoryUsage.used} MB</p>
+                <p className="text-lg font-semibold">
+                  {(serverInfo.memoryUsage.usedMB / 1024).toFixed(1)} / {serverInfo.memoryUsage.totalGB} GB
+                </p>
                 <div className="mt-2 h-1.5 bg-gray-700 rounded-full overflow-hidden">
                   <div
                     className={`h-full rounded-full transition-all ${
@@ -210,19 +234,131 @@ export default function ServerStatusPage() {
                     style={{ width: `${memPercent}%` }}
                   />
                 </div>
-                <p className="text-xs text-gray-500 mt-1">{memPercent}% of {serverInfo.memoryUsage.total} MB</p>
+                <p className="text-xs text-gray-500 mt-1">{memPercent}% used</p>
               </div>
               <div className="bg-gray-800/50 rounded-xl p-4">
                 <div className="flex items-center gap-2 text-gray-400 text-sm mb-1">
-                  <Cpu className="h-4 w-4" />
-                  Platform
+                  <Network className="h-4 w-4" />
+                  Server IP
                 </div>
-                <p className="text-lg font-semibold capitalize">{serverInfo.platform}</p>
-                <p className="text-xs text-gray-500">{serverInfo.nodeVersion}</p>
+                {serverInfo.lanIPs.length > 0 ? (
+                  serverInfo.lanIPs.map((ip) => (
+                    <p key={ip} className="text-lg font-semibold">{ip}</p>
+                  ))
+                ) : (
+                  <p className="text-lg font-semibold text-gray-500">No LAN</p>
+                )}
               </div>
             </div>
           )}
         </div>
+
+        {/* Connection Info for Terminals */}
+        {serverInfo?.connectionInfo && (
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2 rounded-lg bg-purple-500/20">
+                <Database className="h-5 w-5 text-purple-400" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold">Connection Info</h2>
+                <p className="text-sm text-gray-400">Use these credentials when setting up new terminals</p>
+              </div>
+            </div>
+
+            {/* Connection String */}
+            <div className="mb-4">
+              <label className="text-xs text-gray-500 uppercase tracking-wide mb-1 block">Connection String</label>
+              <div className="flex items-center gap-2 bg-gray-800/50 rounded-lg p-3">
+                <code className="text-sm text-green-400 flex-1 break-all font-mono">
+                  {showPassword
+                    ? serverInfo.connectionInfo.connectionString
+                    : serverInfo.connectionInfo.connectionString.replace(
+                        `:${serverInfo.connectionInfo.password}@`,
+                        ":****@"
+                      )}
+                </code>
+                <button
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="p-1.5 rounded hover:bg-gray-700 transition-colors flex-shrink-0"
+                  title={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4 text-gray-400" /> : <Eye className="h-4 w-4 text-gray-400" />}
+                </button>
+                <button
+                  onClick={() => copyToClipboard(serverInfo.connectionInfo!.connectionString, "connStr")}
+                  className="p-1.5 rounded hover:bg-gray-700 transition-colors flex-shrink-0"
+                  title="Copy"
+                >
+                  {copied === "connStr" ? (
+                    <CheckCircle2 className="h-4 w-4 text-green-400" />
+                  ) : (
+                    <Copy className="h-4 w-4 text-gray-400" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Individual Fields */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { label: "Host", value: serverInfo.lanIPs[0] || serverInfo.connectionInfo.host, key: "host" },
+                { label: "Port", value: serverInfo.connectionInfo.port, key: "port" },
+                { label: "Database", value: serverInfo.connectionInfo.database, key: "db" },
+                { label: "Username", value: serverInfo.connectionInfo.username, key: "user" },
+              ].map((field) => (
+                <div key={field.key} className="bg-gray-800/50 rounded-lg p-3">
+                  <label className="text-xs text-gray-500 block mb-1">{field.label}</label>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-mono text-white">{field.value}</span>
+                    <button
+                      onClick={() => copyToClipboard(field.value, field.key)}
+                      className="p-1 rounded hover:bg-gray-700 transition-colors"
+                    >
+                      {copied === field.key ? (
+                        <CheckCircle2 className="h-3.5 w-3.5 text-green-400" />
+                      ) : (
+                        <Copy className="h-3.5 w-3.5 text-gray-500" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Password field separate with show/hide */}
+            <div className="mt-3 bg-gray-800/50 rounded-lg p-3">
+              <label className="text-xs text-gray-500 block mb-1">Password</label>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-mono text-white">
+                  {showPassword ? serverInfo.connectionInfo.password : "••••••••"}
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="p-1 rounded hover:bg-gray-700 transition-colors"
+                  >
+                    {showPassword ? <EyeOff className="h-3.5 w-3.5 text-gray-500" /> : <Eye className="h-3.5 w-3.5 text-gray-500" />}
+                  </button>
+                  <button
+                    onClick={() => copyToClipboard(serverInfo.connectionInfo!.password, "pass")}
+                    className="p-1 rounded hover:bg-gray-700 transition-colors"
+                  >
+                    {copied === "pass" ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-green-400" />
+                    ) : (
+                      <Copy className="h-3.5 w-3.5 text-gray-500" />
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <p className="text-xs text-gray-600 mt-3">
+              When setting up a terminal, use the Server IP shown above as the host (not &quot;localhost&quot;).
+            </p>
+          </div>
+        )}
 
         {/* Connected Terminals */}
         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
@@ -245,9 +381,9 @@ export default function ServerStatusPage() {
           {!heartbeatData || heartbeatData.terminalCount === 0 ? (
             <div className="text-center py-12">
               <Monitor className="h-12 w-12 text-gray-700 mx-auto mb-3" />
-              <p className="text-gray-500 text-lg">No terminals connected</p>
+              <p className="text-gray-500 text-lg">No terminals connected yet</p>
               <p className="text-gray-600 text-sm mt-1">
-                Terminals will appear here once they connect to this server
+                Terminals send a heartbeat every 30 seconds. They will appear here once connected and running.
               </p>
             </div>
           ) : (

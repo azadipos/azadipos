@@ -25,22 +25,52 @@ export async function GET() {
   }
 
   const uptime = process.uptime();
-  const hours = Math.floor(uptime / 3600);
-  const minutes = Math.floor((uptime % 3600) / 60);
-  const seconds = Math.floor(uptime % 60);
+
+  // Get LAN IP addresses
+  const interfaces = os.networkInterfaces();
+  const lanIPs: string[] = [];
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name] || []) {
+      if (iface.family === "IPv4" && !iface.internal) {
+        lanIPs.push(iface.address);
+      }
+    }
+  }
+
+  // Parse DATABASE_URL for connection info (mask password)
+  let connectionInfo: { host: string; port: string; database: string; username: string; password: string; connectionString: string } | null = null;
+  const dbUrl = process.env.DATABASE_URL;
+  if (dbUrl) {
+    try {
+      const url = new URL(dbUrl);
+      connectionInfo = {
+        host: url.hostname,
+        port: url.port || "5432",
+        database: url.pathname.replace(/^\//, ""),
+        username: decodeURIComponent(url.username),
+        password: decodeURIComponent(url.password),
+        connectionString: dbUrl,
+      };
+    } catch {
+      // ignore parse errors
+    }
+  }
 
   return NextResponse.json({
     status: "running",
     version,
-    uptime: `${hours}h ${minutes}m ${seconds}s`,
+    uptime: `${Math.floor(uptime / 3600)}h ${Math.floor((uptime % 3600) / 60)}m`,
     uptimeSeconds: Math.floor(uptime),
     hostname: os.hostname(),
     platform: os.platform(),
     memoryUsage: {
-      total: Math.round(os.totalmem() / 1024 / 1024),
-      free: Math.round(os.freemem() / 1024 / 1024),
-      used: Math.round((os.totalmem() - os.freemem()) / 1024 / 1024),
+      totalMB: Math.round(os.totalmem() / 1024 / 1024),
+      freeMB: Math.round(os.freemem() / 1024 / 1024),
+      usedMB: Math.round((os.totalmem() - os.freemem()) / 1024 / 1024),
+      totalGB: (os.totalmem() / 1024 / 1024 / 1024).toFixed(1),
     },
+    lanIPs,
+    connectionInfo,
     nodeVersion: process.version,
     serverTime: new Date().toISOString(),
   });

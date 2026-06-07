@@ -1023,9 +1023,7 @@ export default function TransactionPage() {
       })
     );
     
-    // Clear draft so it doesn't restore if user navigates away after payment
-    sessionStorage.removeItem("pos_cart_draft");
-    
+    // Keep pos_cart_draft alive so back navigation from payment restores the cart
     router.push(`/pos/${companyId}/payment`);
   };
   

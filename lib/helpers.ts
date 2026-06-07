@@ -1,8 +1,9 @@
 export function generateTransactionNumber(): string {
   const now = new Date();
   const datePart = now.toISOString().slice(0, 10).replace(/-/g, "");
-  const timePart = now.getTime().toString().slice(-6);
-  return `TXN-${datePart}-${timePart}`;
+  const timePart = now.getTime().toString().slice(-8);
+  const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
+  return `TXN-${datePart}-${timePart}-${rand}`;
 }
 
 export function formatCurrency(amount: number | null | undefined): string {

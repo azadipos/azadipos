@@ -186,8 +186,14 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     }
     
     return NextResponse.json(transaction);
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error creating transaction:", error);
-    return NextResponse.json({ error: "Failed to create transaction" }, { status: 500 });
+    const message = error?.message || "Unknown error";
+    const code = error?.code || "";
+    return NextResponse.json({ 
+      error: `Failed to create transaction: ${message}`,
+      code,
+      details: String(error),
+    }, { status: 500 });
   }
 }
