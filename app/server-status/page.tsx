@@ -19,6 +19,12 @@ import {
   Eye,
   EyeOff,
   Network,
+  Download,
+  FolderArchive,
+  Upload,
+  FolderOpen,
+  FileText,
+  Loader2,
 } from "lucide-react";
 
 interface TerminalInfo {
@@ -75,6 +81,11 @@ export default function ServerStatusPage() {
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  const [isElectron, setIsElectron] = useState(false);
+  const [backupStatus, setBackupStatus] = useState<string | null>(null);
+  const [backups, setBackups] = useState<any[]>([]);
+  const [restoring, setRestoring] = useState(false);
+  const [backing, setBacking] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -102,6 +113,11 @@ export default function ServerStatusPage() {
   useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 10000);
+    const electronAvailable = !!(window as any).electron?.isElectron;
+    setIsElectron(electronAvailable);
+    if (electronAvailable) {
+      (window as any).electron?.listBackups?.().then((b: any[]) => setBackups(b || []));
+    }
     return () => clearInterval(interval);
   }, [fetchData]);
 
@@ -458,6 +474,148 @@ export default function ServerStatusPage() {
             </div>
           )}
         </div>
+
+        {/* Backup & Restore - Only visible in Electron */}
+        {isElectron && (
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2 rounded-lg bg-amber-500/20">
+                <FolderArchive className="h-5 w-5 text-amber-400" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold">Backup & Restore</h2>
+                <p className="text-sm text-gray-400">Manage database backups</p>
+              </div>
+            </div>
+
+            {backupStatus && (
+              <div className={`mb-4 p-3 rounded-lg text-sm ${
+                backupStatus.includes('Error') || backupStatus.includes('fail')
+                  ? 'bg-red-900/30 border border-red-800 text-red-300'
+                  : 'bg-green-900/30 border border-green-800 text-green-300'
+              }`}>
+                {backupStatus}
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-3 mb-6">
+              <button
+                onClick={async () => {
+                  setBacking(true);
+                  setBackupStatus(null);
+                  try {
+                    const result = await (window as any).electron.backupDatabase();
+                    setBackupStatus(result?.success ? `Backup created: ${result.filename}` : `Error: ${result?.error || 'Unknown'}`);
+                    const b = await (window as any).electron.listBackups();
+                    setBackups(b || []);
+                  } catch (e: any) {
+                    setBackupStatus(`Error: ${e.message}`);
+                  } finally {
+                    setBacking(false);
+                  }
+                }}
+                disabled={backing}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 transition-colors text-sm font-medium"
+              >
+                {backing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                Create Backup
+              </button>
+              <button
+                onClick={async () => {
+                  setRestoring(true);
+                  setBackupStatus(null);
+                  try {
+                    const filePath = await (window as any).electron.browseBackupFile();
+                    if (filePath) {
+                      const result = await (window as any).electron.restoreDatabase(filePath);
+                      setBackupStatus(result?.success ? 'Database restored successfully! Restart the app to apply changes.' : `Error: ${result?.error || 'Unknown'}`);
+                    } else {
+                      setBackupStatus(null);
+                    }
+                  } catch (e: any) {
+                    setBackupStatus(`Error: ${e.message}`);
+                  } finally {
+                    setRestoring(false);
+                  }
+                }}
+                disabled={restoring}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-gray-700 hover:bg-gray-600 disabled:opacity-50 transition-colors text-sm font-medium"
+              >
+                {restoring ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                Restore from File
+              </button>
+              <button
+                onClick={() => (window as any).electron?.openBackupFolder?.()}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-gray-700 hover:bg-gray-600 transition-colors text-sm font-medium"
+              >
+                <FolderOpen className="h-4 w-4" />
+                Open Backup Folder
+              </button>
+            </div>
+
+            {backups.length > 0 && (
+              <div>
+                <h3 className="text-sm font-medium text-gray-400 mb-3">Recent Backups</h3>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {backups.slice(0, 10).map((b: any, i: number) => (
+                    <div key={i} className="flex items-center justify-between p-3 bg-gray-800/50 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <FileText className="h-4 w-4 text-gray-500" />
+                        <div>
+                          <p className="text-sm font-mono">{b.filename || b}</p>
+                          {b.size && <p className="text-xs text-gray-500">{(b.size / 1024 / 1024).toFixed(1)} MB</p>}
+                        </div>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          if (confirm('Restore this backup? This will overwrite the current database.')) {
+                            setRestoring(true);
+                            setBackupStatus(null);
+                            try {
+                              const result = await (window as any).electron.restoreDatabase(b.path || b);
+                              setBackupStatus(result?.success ? 'Restored successfully! Restart the app.' : `Error: ${result?.error}`);
+                            } catch (e: any) {
+                              setBackupStatus(`Error: ${e.message}`);
+                            } finally {
+                              setRestoring(false);
+                            }
+                          }
+                        }}
+                        className="text-xs px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
+                      >
+                        Restore
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Check for Updates - Only visible in Electron */}
+        {isElectron && (
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-green-500/20">
+                  <Download className="h-5 w-5 text-green-400" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold">Software Updates</h2>
+                  <p className="text-sm text-gray-400">Check for the latest version of AzadiPOS</p>
+                </div>
+              </div>
+              <button
+                onClick={() => (window as any).electron?.checkForUpdates?.()}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-green-600 hover:bg-green-700 transition-colors text-sm font-medium"
+              >
+                <Download className="h-4 w-4" />
+                Check for Updates
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Footer */}
         <div className="text-center text-gray-600 text-xs pb-4">
