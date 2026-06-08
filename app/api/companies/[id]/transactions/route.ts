@@ -54,10 +54,18 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   try {
     const data = await req.json();
-    const { employeeId, shiftId, items, paymentMethod, cashGiven, type, customerId, loyaltyPointsRedeemed, loyaltyRewardDiscount } = data;
+    const { employeeId, shiftId, items = [], paymentMethod, cashGiven, type, customerId, loyaltyPointsRedeemed, loyaltyRewardDiscount } = data;
     
-    if (!employeeId || !items || items.length === 0) {
-      return NextResponse.json({ error: "Employee and items are required" }, { status: 400 });
+    if (!employeeId) {
+      return NextResponse.json({ error: "Employee is required" }, { status: 400 });
+    }
+    
+    // Allow empty items for gift-card-only or store-credit-only transactions
+    const hasItems = items && items.length > 0;
+    const hasGiftCardSales = data.giftCardSales && data.giftCardSales.length > 0;
+    const hasCreditsApplied = (data.storeCreditApplied || 0) > 0 || (data.giftCardApplied || 0) > 0;
+    if (!hasItems && !hasGiftCardSales && !hasCreditsApplied) {
+      return NextResponse.json({ error: "Items or payment credits are required" }, { status: 400 });
     }
     
     // Calculate totals with tax

@@ -16,6 +16,18 @@ contextBridge.exposeInMainWorld('electronStore', {
   isElectron: true,
 });
 
+// Expose hardware APIs for POS operations (print, etc.)
+contextBridge.exposeInMainWorld('electronHardware', {
+  printSilent: (request) => ipcRenderer.invoke('print-silent', request),
+  // Stubs for hardware that may not be connected
+  sendPayment: async () => ({ success: true, approved: true }),
+  cancelPayment: async () => {},
+  openCashDrawer: async () => ({ success: true }),
+  readScale: async () => ({ success: false, error: 'No scale connected' }),
+  subscribeScale: () => () => {},
+  getPrinters: async () => [],
+});
+
 // Also expose basic electron info and admin tools
 contextBridge.exposeInMainWorld('electron', {
   ping: () => 'pong',
@@ -37,4 +49,6 @@ contextBridge.exposeInMainWorld('electron', {
   getAppDataPaths: () => ipcRenderer.invoke('get-app-data-paths'),
   // Open log file
   openLogFile: () => ipcRenderer.invoke('open-log-file'),
+  // Check for updates (opens GitHub releases page)
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
 });

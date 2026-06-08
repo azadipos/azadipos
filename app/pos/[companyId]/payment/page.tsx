@@ -79,6 +79,16 @@ export default function PaymentPage() {
   const cashGivenAmount = parseFloat(cashGiven) || 0;
   const changeDue = Math.max(0, cashGivenAmount - total);
   
+  // Auto-complete when total is $0 (fully covered by gift cards / store credits)
+  const [autoCompleted, setAutoCompleted] = useState(false);
+  useEffect(() => {
+    if (cartData && total === 0 && !autoCompleted && !success && !processing) {
+      setAutoCompleted(true);
+      completeTransaction("gift_card");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cartData, total]);
+  
   const handleCashKeyPress = (key: string) => {
     if (key === "." && cashGiven.includes(".")) return;
     setCashGiven(cashGiven + key);
@@ -215,22 +225,44 @@ export default function PaymentPage() {
         }
       }
       
-      // Redeem applied gift cards
+      // Redeem applied gift cards — only deduct what was actually used (partial redemption)
       if (cartData.appliedGiftCards && cartData.appliedGiftCards.length > 0) {
+        const grossTotal = cartData.totals?.grossTotal || 0;
+        const storeCreditTotal = cartData.totals?.storeCreditTotal || 0;
+        const loyaltyDiscount = cartData.totals?.loyaltyRewardDiscount || 0;
+        let giftCardRemaining = Math.max(0, grossTotal - storeCreditTotal - loyaltyDiscount);
+        const giftCardRedemptions: { barcode: string; amount: number; remainingBalance?: number }[] = [];
+        
         for (const giftCard of cartData.appliedGiftCards) {
-          try {
-            await fetch("/api/gift-cards/redeem", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                barcode: giftCard.barcode,
-                amount: Math.min(giftCard.amount, total + (cartData.totals?.giftCardTotal || 0)),
-                transactionId: txn.id,
-              }),
-            });
-          } catch (err) {
-            console.error("Failed to redeem gift card:", giftCard.barcode, err);
+          const deductAmount = Math.min(giftCard.amount, giftCardRemaining);
+          if (deductAmount > 0) {
+            try {
+              const redeemRes = await fetch("/api/gift-cards/redeem", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  barcode: giftCard.barcode,
+                  amount: deductAmount,
+                  transactionId: txn.id,
+                }),
+              });
+              if (redeemRes.ok) {
+                const redeemData = await redeemRes.json();
+                giftCardRedemptions.push({
+                  barcode: giftCard.barcode,
+                  amount: deductAmount,
+                  remainingBalance: redeemData.remainingBalance,
+                });
+              }
+              giftCardRemaining -= deductAmount;
+            } catch (err) {
+              console.error("Failed to redeem gift card:", giftCard.barcode, err);
+            }
           }
+        }
+        // Store redemption details for receipt
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('last_gc_redemptions', JSON.stringify(giftCardRedemptions));
         }
       }
       
@@ -266,6 +298,13 @@ export default function PaymentPage() {
       try {
         const companyRes = await fetch(`/api/companies/${companyId}/settings`);
         const company = companyRes.ok ? await companyRes.json() : { name: 'Store' };
+        // Get gift card redemption details from session storage
+        let gcRedemptions: any[] = [];
+        try {
+          const stored = sessionStorage.getItem('last_gc_redemptions');
+          if (stored) gcRedemptions = JSON.parse(stored);
+        } catch (_) {}
+        
         printReceipt({
           companyName: company.name || 'Store',
           address: company.address, phone: company.phone,
@@ -278,6 +317,8 @@ export default function PaymentPage() {
           })),
           subtotal: txn.subtotal, tax: txn.tax, total: txn.total,
           loyaltyRewardDiscount: txn.loyaltyRewardDiscount || 0,
+          storeCreditApplied: cartData.totals?.storeCreditTotal || 0,
+          giftCardApplied: cartData.totals?.giftCardTotal || 0,
           paymentMethod: txn.paymentMethod || effectiveMethod || 'cash',
           cashGiven: txn.cashGiven, changeDue: txn.changeDue,
           customerName: cartData.customer?.name,
@@ -291,6 +332,7 @@ export default function PaymentPage() {
             entryMethod: effectiveCardData.entryMethod,
             cardholderName: effectiveCardData.cardholderName,
           } : null,
+          giftCardRedemptions: gcRedemptions.length > 0 ? gcRedemptions : undefined,
         });
       } catch (printErr) {
         console.error('Receipt print failed:', printErr);
@@ -350,6 +392,11 @@ export default function PaymentPage() {
                 fetch(`/api/companies/${companyId}/settings`)
                   .then(r => r.ok ? r.json() : { name: 'Store' })
                   .then(company => {
+                    let gcRedemptions: any[] = [];
+                    try {
+                      const stored = sessionStorage.getItem('last_gc_redemptions');
+                      if (stored) gcRedemptions = JSON.parse(stored);
+                    } catch (_) {}
                     printReceipt({
                       companyName: company.name || 'Store',
                       address: company.address, phone: company.phone,
@@ -360,6 +407,8 @@ export default function PaymentPage() {
                       items: (completedTxn.items || []).map((i: any) => ({ name: i.itemName, quantity: i.quantity, unitPrice: i.unitPrice, lineTotal: i.lineTotal, isWeightItem: i.isWeightItem })),
                       subtotal: completedTxn.subtotal, tax: completedTxn.tax, total: completedTxn.total,
                       loyaltyRewardDiscount: completedTxn.loyaltyRewardDiscount || 0,
+                      storeCreditApplied: cartData.totals?.storeCreditTotal || 0,
+                      giftCardApplied: cartData.totals?.giftCardTotal || 0,
                       paymentMethod: completedTxn.paymentMethod,
                       cashGiven: completedTxn.cashGiven, changeDue: completedTxn.changeDue,
                       customerName: cartData.customer?.name,
@@ -373,6 +422,7 @@ export default function PaymentPage() {
                         entryMethod: savedCardData.entryMethod,
                         cardholderName: savedCardData.cardholderName,
                       } : null,
+                      giftCardRedemptions: gcRedemptions.length > 0 ? gcRedemptions : undefined,
                     });
                   });
               }

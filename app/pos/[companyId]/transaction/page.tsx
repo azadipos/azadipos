@@ -189,6 +189,16 @@ export default function TransactionPage() {
   // Clear cart confirmation
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   
+  // On-screen keyboard for touchscreen
+  const [showOnScreenKeyboard, setShowOnScreenKeyboard] = useState(false);
+  
+  // Gift card balance check
+  const [gcBalanceModalOpen, setGcBalanceModalOpen] = useState(false);
+  const [gcBalanceBarcode, setGcBalanceBarcode] = useState("");
+  const [gcBalanceResult, setGcBalanceResult] = useState<{ barcode: string; balance: number; initialValue: number } | null>(null);
+  const [gcBalanceLoading, setGcBalanceLoading] = useState(false);
+  const [gcBalanceError, setGcBalanceError] = useState("");
+  
   // Transaction info
   const [transactionDate] = useState(new Date());
   const [transactionId] = useState(() => {
@@ -314,7 +324,7 @@ export default function TransactionPage() {
   useEffect(() => {
     const focusInput = () => {
       // Don't refocus if any modal is open
-      if (!weightModalOpen && !customerModalOpen && !ageVerifyModalOpen && !rewardModalOpen && !clearConfirmOpen && barcodeInputRef.current) {
+      if (!weightModalOpen && !customerModalOpen && !ageVerifyModalOpen && !rewardModalOpen && !clearConfirmOpen && !gcBalanceModalOpen && barcodeInputRef.current) {
         barcodeInputRef.current.focus();
       }
     };
@@ -323,14 +333,14 @@ export default function TransactionPage() {
     
     // Refocus after any interaction, but only if modals are closed
     const handleClick = () => {
-      if (!weightModalOpen && !customerModalOpen && !ageVerifyModalOpen && !rewardModalOpen && !clearConfirmOpen) {
+      if (!weightModalOpen && !customerModalOpen && !ageVerifyModalOpen && !rewardModalOpen && !clearConfirmOpen && !gcBalanceModalOpen) {
         setTimeout(focusInput, 100);
       }
     };
     document.addEventListener("click", handleClick);
     
     return () => document.removeEventListener("click", handleClick);
-  }, [weightModalOpen, customerModalOpen, ageVerifyModalOpen, rewardModalOpen, clearConfirmOpen]);
+  }, [weightModalOpen, customerModalOpen, ageVerifyModalOpen, rewardModalOpen, clearConfirmOpen, gcBalanceModalOpen]);
   
   // Check for available rewards when customer is set
   const availableReward = useMemo(() => {
@@ -615,10 +625,11 @@ export default function TransactionPage() {
         return;
       }
       
-      // Apply gift card balance
+      // Apply gift card balance — only apply what's needed (partial redemption)
+      // The actual amount to deduct will be calculated at payment time based on the total
       setAppliedGiftCards(prev => [...prev, {
         barcode: giftCard.barcode,
-        amount: giftCard.balance,
+        amount: giftCard.balance, // Store the full available balance; actual deduction happens at payment
         giftCardId: giftCard.id,
       }]);
       setError("");
@@ -630,6 +641,26 @@ export default function TransactionPage() {
   
   const removeGiftCard = (gcBarcode: string) => {
     setAppliedGiftCards(prev => prev.filter(gc => gc.barcode !== gcBarcode));
+  };
+  
+  const checkGiftCardBalance = async () => {
+    if (!gcBalanceBarcode.trim()) return;
+    setGcBalanceLoading(true);
+    setGcBalanceError("");
+    setGcBalanceResult(null);
+    try {
+      const res = await fetch(`/api/gift-cards?barcode=${encodeURIComponent(gcBalanceBarcode.trim())}`);
+      if (!res.ok) {
+        setGcBalanceError("Gift card not found");
+        return;
+      }
+      const gc = await res.json();
+      setGcBalanceResult({ barcode: gc.barcode, balance: gc.balance, initialValue: gc.initialValue });
+    } catch {
+      setGcBalanceError("Failed to check balance");
+    } finally {
+      setGcBalanceLoading(false);
+    }
   };
   
   const lookupCustomer = async () => {
@@ -1003,9 +1034,17 @@ export default function TransactionPage() {
     const discountedTax = tax - (totalPromotionSavings * (tax / subtotal || 0));
     
     const storeCreditTotal = appliedStoreCredits.reduce((sum, sc) => sum + sc.amount, 0);
-    const giftCardTotal = appliedGiftCards.reduce((sum, gc) => sum + gc.amount, 0);
     const loyaltyRewardDiscount = appliedReward?.discount ?? 0;
     const grossTotal = Math.max(0, discountedSubtotal) + Math.max(0, discountedTax);
+    // For gift cards, only apply what's needed (partial redemption)
+    const remainingAfterCredits = Math.max(0, grossTotal - storeCreditTotal - loyaltyRewardDiscount);
+    let giftCardTotal = 0;
+    let remaining = remainingAfterCredits;
+    for (const gc of appliedGiftCards) {
+      const deduct = Math.min(gc.amount, remaining);
+      giftCardTotal += deduct;
+      remaining -= deduct;
+    }
     const creditsTotal = storeCreditTotal + giftCardTotal + loyaltyRewardDiscount;
     const total = Math.max(0, grossTotal - creditsTotal);
     
@@ -1025,7 +1064,9 @@ export default function TransactionPage() {
   const totals = calculateTotals();
   
   const handleSubmit = () => {
-    if ((cart?.length ?? 0) === 0) {
+    const hasCartItems = (cart?.length ?? 0) > 0;
+    const hasCreditsOrGiftCards = appliedStoreCredits.length > 0 || appliedGiftCards.length > 0;
+    if (!hasCartItems && !hasCreditsOrGiftCards) {
       setError("Add items to cart first");
       return;
     }
@@ -1236,12 +1277,26 @@ export default function TransactionPage() {
               onFocus={() => barcode.length >= 1 && searchResults.length > 0 && setShowSearch(true)}
               onBlur={() => setTimeout(() => setShowSearch(false), 200)}
               placeholder="Scan barcode or type to search..."
-              className="pl-10 h-14 text-lg bg-pos-card border-pos-border text-white"
+              className="pl-10 pr-12 h-14 text-lg bg-pos-card border-pos-border text-white"
               autoFocus
               autoComplete="off"
             />
+            {/* Touchscreen keyboard toggle */}
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setShowOnScreenKeyboard(prev => !prev); }}
+              className={`absolute right-3 top-1/2 -translate-y-1/2 z-10 p-1 rounded transition-colors ${
+                showOnScreenKeyboard ? 'text-green-400 bg-green-900/30' : 'text-gray-500 hover:text-gray-300'
+              }`}
+              title="Toggle on-screen keyboard"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="4" width="20" height="16" rx="2" />
+                <path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M8 16h8" />
+              </svg>
+            </button>
             {(loading || searchLoading) && (
-              <div className="absolute right-3 top-1/2 -translate-y-1/2">
+              <div className="absolute right-12 top-1/2 -translate-y-1/2">
                 <LoadingSpinner size="sm" />
               </div>
             )}
@@ -1288,6 +1343,93 @@ export default function TransactionPage() {
               )}
             </AnimatePresence>
           </div>
+          
+          {/* On-screen keyboard for touchscreen */}
+          <AnimatePresence>
+            {showOnScreenKeyboard && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="mb-2 overflow-hidden"
+              >
+                <div className="grid grid-cols-11 gap-1 p-2 bg-gray-800/80 rounded-lg border border-gray-700">
+                  {['1','2','3','4','5','6','7','8','9','0','-'].map(key => (
+                    <button
+                      key={key}
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setBarcode(prev => prev + key);
+                        barcodeInputRef.current?.focus();
+                      }}
+                      className="h-11 rounded bg-gray-700 hover:bg-gray-600 active:bg-green-700 text-white font-mono text-lg transition-colors"
+                    >
+                      {key}
+                    </button>
+                  ))}
+                  {['Q','W','E','R','T','Y','U','I','O','P','⌫'].map(key => (
+                    <button
+                      key={key}
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        if (key === '⌫') setBarcode(prev => prev.slice(0, -1));
+                        else setBarcode(prev => prev + key);
+                        barcodeInputRef.current?.focus();
+                      }}
+                      className={`h-11 rounded ${key === '⌫' ? 'bg-red-800 hover:bg-red-700' : 'bg-gray-700 hover:bg-gray-600 active:bg-green-700'} text-white font-mono text-sm transition-colors`}
+                    >
+                      {key}
+                    </button>
+                  ))}
+                  {['A','S','D','F','G','H','J','K','L','.','⏎'].map(key => (
+                    <button
+                      key={key}
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        if (key === '⏎') { lookupItem(barcode); setShowOnScreenKeyboard(false); }
+                        else setBarcode(prev => prev + key);
+                        barcodeInputRef.current?.focus();
+                      }}
+                      className={`h-11 rounded ${key === '⏎' ? 'bg-green-700 hover:bg-green-600 col-span-1' : 'bg-gray-700 hover:bg-gray-600 active:bg-green-700'} text-white font-mono text-sm transition-colors`}
+                    >
+                      {key}
+                    </button>
+                  ))}
+                  {['Z','X','C','V','B','N','M'].map(key => (
+                    <button
+                      key={key}
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setBarcode(prev => prev + key);
+                        barcodeInputRef.current?.focus();
+                      }}
+                      className="h-11 rounded bg-gray-700 hover:bg-gray-600 active:bg-green-700 text-white font-mono text-sm transition-colors"
+                    >
+                      {key}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onMouseDown={(e) => { e.preventDefault(); setBarcode(''); barcodeInputRef.current?.focus(); }}
+                    className="h-11 rounded bg-gray-600 hover:bg-gray-500 text-white font-mono text-xs transition-colors col-span-2"
+                  >
+                    Clear
+                  </button>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => { e.preventDefault(); setBarcode(prev => prev + ' '); barcodeInputRef.current?.focus(); }}
+                    className="h-11 rounded bg-gray-700 hover:bg-gray-600 text-white font-mono text-xs transition-colors col-span-2"
+                  >
+                    Space
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
           
           {error && (
             <p className="text-red-400 text-sm mb-4 px-2">{error}</p>
@@ -1459,11 +1601,19 @@ export default function TransactionPage() {
                       <CreditCard className="h-3 w-3" />
                       Gift Cards Applied
                     </p>
-                    {appliedGiftCards.map((gc) => (
+                    {appliedGiftCards.map((gc) => {
+                      // Show actual amount to be deducted (partial) vs full balance
+                      const actualDeduct = Math.min(gc.amount, totals?.giftCardTotal || gc.amount);
+                      return (
                       <div key={gc.barcode} className="flex justify-between items-center group">
-                        <span className="text-indigo-400 text-xs font-mono">{gc.barcode}</span>
+                        <div>
+                          <span className="text-indigo-400 text-xs font-mono">{gc.barcode}</span>
+                          {gc.amount > actualDeduct && actualDeduct > 0 && (
+                            <span className="text-[10px] text-gray-500 ml-1">(bal: {formatCurrency(gc.amount)})</span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-1">
-                          <span className="text-indigo-400">-{formatCurrency(gc.amount)}</span>
+                          <span className="text-indigo-400">-{formatCurrency(actualDeduct)}</span>
                           <button
                             onClick={() => removeGiftCard(gc.barcode)}
                             className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 transition-opacity"
@@ -1472,7 +1622,8 @@ export default function TransactionPage() {
                           </button>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
                 
@@ -1524,14 +1675,24 @@ export default function TransactionPage() {
                 </div>
               )}
               
-              <Button
-                variant="pos-primary"
-                className="w-full mt-4 h-14 text-lg"
-                onClick={handleSubmit}
-                disabled={(cart?.length ?? 0) === 0}
-              >
-                Pay
-              </Button>
+              <div className="flex gap-2 mt-4">
+                <Button
+                  variant="pos-primary"
+                  className="flex-1 h-14 text-lg"
+                  onClick={handleSubmit}
+                  disabled={(cart?.length ?? 0) === 0 && appliedGiftCards.length === 0 && appliedStoreCredits.length === 0}
+                >
+                  Pay
+                </Button>
+                <Button
+                  variant="pos"
+                  className="h-14 px-3"
+                  onClick={() => { setGcBalanceModalOpen(true); setGcBalanceBarcode(''); setGcBalanceResult(null); setGcBalanceError(''); }}
+                  title="Check Gift Card Balance"
+                >
+                  <CreditCard className="h-5 w-5" />
+                </Button>
+              </div>
             </div>
           </div>
         </div>
@@ -1950,6 +2111,47 @@ export default function TransactionPage() {
               Clear All
             </Button>
           </div>
+        </div>
+      </Modal>
+      
+      {/* Gift Card Balance Check Modal */}
+      <Modal
+        isOpen={gcBalanceModalOpen}
+        onClose={() => { setGcBalanceModalOpen(false); barcodeInputRef.current?.focus(); }}
+        title="Check Gift Card Balance"
+      >
+        <div className="space-y-4">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={gcBalanceBarcode}
+              onChange={(e) => setGcBalanceBarcode(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') checkGiftCardBalance(); }}
+              placeholder="Scan or enter gift card barcode"
+              className="flex-1 h-12 px-4 bg-gray-900 border border-gray-700 rounded-lg text-white focus:border-green-500 focus:outline-none font-mono"
+              autoFocus
+            />
+            <Button
+              variant="pos-primary"
+              className="h-12 px-6"
+              onClick={checkGiftCardBalance}
+              disabled={gcBalanceLoading || !gcBalanceBarcode.trim()}
+            >
+              {gcBalanceLoading ? <LoadingSpinner size="sm" /> : 'Check'}
+            </Button>
+          </div>
+          {gcBalanceError && (
+            <div className="p-3 bg-red-900/20 border border-red-600/30 rounded-lg">
+              <p className="text-red-400 text-sm">{gcBalanceError}</p>
+            </div>
+          )}
+          {gcBalanceResult && (
+            <div className="p-4 bg-green-900/20 border border-green-600/30 rounded-lg text-center">
+              <p className="text-gray-400 text-xs font-mono mb-2">{gcBalanceResult.barcode}</p>
+              <p className="text-3xl font-bold text-green-400">{formatCurrency(gcBalanceResult.balance)}</p>
+              <p className="text-sm text-gray-400 mt-1">Original value: {formatCurrency(gcBalanceResult.initialValue)}</p>
+            </div>
+          )}
         </div>
       </Modal>
     </div>

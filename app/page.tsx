@@ -44,8 +44,22 @@ export default function HomePage() {
   
   useEffect(() => {
     setMounted(true);
-    setIsElectron(!!window.electron?.isElectron);
-  }, []);
+    const electronDetected = !!window.electron?.isElectron;
+    setIsElectron(electronDetected);
+    
+    // Auto-redirect based on Electron config mode
+    if (electronDetected && window.electron) {
+      window.electron.getConfig().then((config: any) => {
+        if (config?.mode === 'terminal') {
+          // Terminal mode: go straight to POS terminal
+          router.push('/pos');
+        } else if (config?.mode === 'server') {
+          // Server/admin mode: go straight to admin portal
+          router.push('/admin');
+        }
+      }).catch(() => {});
+    }
+  }, [router]);
   
   const loadServerInfo = async () => {
     if (!window.electron) return;

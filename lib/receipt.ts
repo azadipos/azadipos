@@ -17,6 +17,8 @@ interface ReceiptData {
   tax: number;
   total: number;
   loyaltyRewardDiscount?: number;
+  storeCreditApplied?: number;
+  giftCardApplied?: number;
   paymentMethod: string;
   cashGiven?: number | null;
   changeDue?: number | null;
@@ -32,6 +34,8 @@ interface ReceiptData {
     entryMethod?: string;
     cardholderName?: string;
   } | null;
+  // Gift card redemption details for receipt
+  giftCardRedemptions?: { barcode: string; amount: number; remainingBalance?: number }[];
 }
 
 // Generate Code 128B barcode as SVG path data
@@ -159,13 +163,23 @@ export function generateReceiptHtml(data: ReceiptData): string {
   <div class="item-row"><span>Subtotal:</span><span>${formatCurrency(data.subtotal)}</span></div>
   <div class="item-row"><span>Tax:</span><span>${formatCurrency(data.tax)}</span></div>
   ${(data.loyaltyRewardDiscount ?? 0) > 0 ? `<div class="item-row" style="color:#c00;"><span>Loyalty Reward:</span><span>-${formatCurrency(data.loyaltyRewardDiscount!)}</span></div>` : ''}
+  ${(data.storeCreditApplied ?? 0) > 0 ? `<div class="item-row" style="color:#c00;"><span>Store Credit:</span><span>-${formatCurrency(data.storeCreditApplied!)}</span></div>` : ''}
+  ${(data.giftCardApplied ?? 0) > 0 ? `<div class="item-row" style="color:#c00;"><span>Gift Card:</span><span>-${formatCurrency(data.giftCardApplied!)}</span></div>` : ''}
   <div class="line"></div>
   <div class="item-row bold" style="font-size:14px;"><span>TOTAL:</span><span>${formatCurrency(data.total)}</span></div>
   <div class="line"></div>
-  <div class="item-row"><span>Payment: ${data.paymentMethod.charAt(0).toUpperCase() + data.paymentMethod.slice(1)}</span></div>
+  <div class="item-row"><span>Payment: ${data.paymentMethod === 'gift_card' ? 'Gift Card' : data.paymentMethod.charAt(0).toUpperCase() + data.paymentMethod.slice(1)}</span></div>
   ${data.cashGiven ? `<div class="item-row"><span>Cash Given:</span><span>${formatCurrency(data.cashGiven)}</span></div>` : ''}
   ${data.changeDue && data.changeDue > 0 ? `<div class="item-row bold"><span>Change:</span><span>${formatCurrency(data.changeDue)}</span></div>` : ''}
   ${cardInfoHtml}
+  ${(data.giftCardRedemptions && data.giftCardRedemptions.length > 0) ? `
+    <div class="line"></div>
+    <div class="center bold">GIFT CARD DETAILS</div>
+    ${data.giftCardRedemptions.map(gc => `
+      <div class="item-row"><span>${gc.barcode}</span><span>-${formatCurrency(gc.amount)}</span></div>
+      ${gc.remainingBalance !== undefined ? `<div class="item-row" style="font-size:10px;"><span>Remaining Balance:</span><span>${formatCurrency(gc.remainingBalance)}</span></div>` : ''}
+    `).join('')}
+  ` : ''}
   ${(data.loyaltyPointsEarned ?? 0) > 0 ? `<div style="margin-top:6px;text-align:center;font-size:10px;">⭐ You earned ${data.loyaltyPointsEarned} loyalty points!</div>` : ''}
   ${(data.loyaltyPointsRedeemed ?? 0) > 0 ? `<div style="text-align:center;font-size:10px;">🎁 ${data.loyaltyPointsRedeemed} points redeemed</div>` : ''}
   <div class="barcode">${barcodeSvg}</div>

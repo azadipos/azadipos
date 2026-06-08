@@ -714,7 +714,7 @@ function createAdminWindow() {
   });
   
   mainWindow = win;
-  win.loadURL('http://127.0.0.1:3000');
+  win.loadURL('http://127.0.0.1:3000/admin');
   win.once('ready-to-show', () => {
     if (win && !win.isDestroyed()) win.show();
   });
@@ -730,11 +730,11 @@ function createPOSWindow() {
       nodeIntegration: false, contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
     },
-    autoHideMenuBar: true, title: 'AzadiPOS', show: false,
+    autoHideMenuBar: true, title: 'AzadiPOS - Terminal', show: false,
   });
   
   mainWindow = win;
-  win.loadURL('http://127.0.0.1:3000');
+  win.loadURL('http://127.0.0.1:3000/pos');
   win.once('ready-to-show', () => {
     if (win && !win.isDestroyed()) win.show();
   });
@@ -1248,6 +1248,52 @@ ipcMain.handle('get-app-data-paths', async () => {
     offlineQueue: getOfflineQueuePath(),
     terminalId: getTerminalIdPath(),
   };
+});
+
+// ==================== SILENT PRINTING ====================
+
+ipcMain.handle('print-silent', async (event, options) => {
+  try {
+    const { html, silent, width } = options;
+    // Create a hidden window to render and print
+    const printWin = new BrowserWindow({
+      show: false,
+      width: width ? width * 4 : 320,
+      height: 600,
+      webPreferences: { nodeIntegration: false, contextIsolation: true },
+    });
+    
+    await printWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    
+    return new Promise((resolve) => {
+      printWin.webContents.print(
+        {
+          silent: silent !== false,
+          printBackground: true,
+          margins: { marginType: 'none' },
+        },
+        (success, failureReason) => {
+          printWin.close();
+          if (success) {
+            resolve({ success: true });
+          } else {
+            resolve({ success: false, error: failureReason || 'Print failed' });
+          }
+        }
+      );
+    });
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// ==================== APP UPDATE ====================
+
+ipcMain.handle('check-for-updates', async () => {
+  // Open the GitHub releases page for manual update
+  const releasesUrl = 'https://github.com/azadipos/azadipos/releases/latest';
+  shell.openExternal(releasesUrl);
+  return { success: true, url: releasesUrl };
 });
 
 // ==================== APP STARTUP ====================

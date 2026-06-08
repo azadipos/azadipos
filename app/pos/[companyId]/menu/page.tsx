@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { usePOS } from "@/lib/pos-context";
-import { ShoppingCart, LogOut, RotateCcw, DollarSign, ClipboardList } from "lucide-react";
+import { ShoppingCart, LogOut, RotateCcw, DollarSign, ClipboardList, Download } from "lucide-react";
 import { motion } from "framer-motion";
 
 export default function POSMenuPage() {
@@ -13,10 +13,13 @@ export default function POSMenuPage() {
   const companyId = params?.companyId as string;
   const { employee, logout } = usePOS();
   
+  const [isElectron, setIsElectron] = useState(false);
+  
   useEffect(() => {
     if (!employee) {
       router.push(`/pos/${companyId}/login`);
     }
+    setIsElectron(!!(window as any).electron?.isElectron);
   }, [employee, companyId, router]);
   
   const handleLogout = () => {
@@ -119,6 +122,20 @@ export default function POSMenuPage() {
           </motion.div>
         </div>
       </div>
+      
+      {isElectron && (
+        <div className="p-4 pt-0 flex justify-center">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-gray-500 hover:text-gray-300 gap-2"
+            onClick={() => (window as any).electron?.checkForUpdates?.()}
+          >
+            <Download className="h-4 w-4" />
+            Check for Updates
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

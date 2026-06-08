@@ -73,6 +73,7 @@ interface Shift {
   cashInjections: number;
   status: string;
   closedBy?: { id: string; name: string } | null;
+  variance?: number | null;
 }
 
 interface TransactionSummary {
@@ -522,6 +523,14 @@ export default function EmployeeStatsPage() {
                           <p className="text-xs text-purple-400 mt-0.5">
                             ✓ {shift.closedBy.name}
                           </p>
+                        )}
+                        {shift.variance != null && Math.abs(shift.variance) >= 0.01 && (
+                          <p className={`text-xs font-semibold mt-0.5 ${Math.abs(shift.variance) <= 5 ? 'text-yellow-400' : 'text-red-400'}`}>
+                            ⚠ {shift.variance > 0 ? '+' : ''}{formatCurrency(shift.variance)} variance
+                          </p>
+                        )}
+                        {shift.variance != null && Math.abs(shift.variance) < 0.01 && (
+                          <p className="text-xs text-green-400 mt-0.5">✓ Balanced</p>
                         )}
                       </div>
                       <ChevronRight className="h-5 w-5 text-gray-500 group-hover:text-gray-300 transition-colors" />
